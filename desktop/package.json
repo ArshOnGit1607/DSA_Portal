@@ -1,0 +1,12 @@
+{
+  "name": "@dsa-portal/desktop",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}
