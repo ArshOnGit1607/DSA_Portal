@@ -1,16 +1,20 @@
 import { execFileSync } from 'child_process';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
-import { Problem, SubmissionResult, TestCase } from './types';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import type { Problem, ExecutionResult, TestCase } from './types';
 
 interface RunOptions {
   problem: Problem;
   userCode: string;
 }
 
-export function submitCode({ problem, userCode }: RunOptions): SubmissionResult {
-  const results: SubmissionResult['results'] = [];
+/**
+ * Runs user JavaScript against a problem's predefined test cases in an
+ * isolated child_process. Pure logic — no HTTP, no database.
+ */
+export function submitCode({ problem, userCode }: RunOptions): ExecutionResult {
+  const results: ExecutionResult['results'] = [];
   let passed = 0;
 
   for (let i = 0; i < problem.testCases.length; i++) {
@@ -32,7 +36,7 @@ function runSingleTestCase(
   userCode: string,
   tc: TestCase,
   index: number
-): SubmissionResult['results'][number] {
+): ExecutionResult['results'][number] {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsa-exec-'));
   const tmpFile = path.join(tmpDir, 'solution.js');
 
@@ -57,12 +61,12 @@ try {
       timeout: 5000,
       maxBuffer: 1024 * 1024,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       testCaseIndex: index,
       passed: false,
       expected: tc.expected,
-      actual: `Execution error: ${err.message}`,
+      actual: `Execution error: ${err instanceof Error ? err.message : String(err)}`,
     };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

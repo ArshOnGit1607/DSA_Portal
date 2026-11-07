@@ -1,0 +1,21 @@
+{
+  "id": "palindrome-number",
+  "title": "Palindrome Number",
+  "topic": "Strings",
+  "difficulty": "Easy",
+  "description": "Given an integer x, return true if x is a palindrome integer, and false otherwise. A palindrome integer reads the same backward as forward.",
+  "starterCode": "function solve(input) {\n  const { x } = input;\n  // your code here\n  return false;\n}\n",
+  "testCases": [
+    { "input": { "x": 121 }, "expected": true },
+    { "input": { "x": -121 }, "expected": false },
+    { "input": { "x": 10 }, "expected": false }
+  ],
+  "hints": [
+    { "level": 1, "content": "Negative numbers cannot be palindromes." },
+    { "level": 2, "content": "Reverse the digits and compare with the original." }
+  ],
+  "solution": {
+    "code": "function solve(input) { const { x } = input; if (x < 0) return false; let rev = 0, n = x; while (n > 0) { rev = rev * 10 + (n % 10); n = Math.floor(n / 10); } return rev === x; }",
+    "explanation": "Build the reversed number digit by digit, then compare with the original input."
+  }
+}

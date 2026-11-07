@@ -1,0 +1,21 @@
+{
+  "id": "two-sum",
+  "title": "Two Sum",
+  "topic": "Arrays",
+  "difficulty": "Easy",
+  "description": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution.",
+  "starterCode": "function solve(input) {\n  const { nums, target } = input;\n  // your code here\n  return [];\n}\n",
+  "testCases": [
+    { "input": { "nums": [2, 7, 11, 15], "target": 9 }, "expected": [0, 1] },
+    { "input": { "nums": [3, 2, 4], "target": 6 }, "expected": [1, 2] },
+    { "input": { "nums": [3, 3], "target": 6 }, "expected": [0, 1] }
+  ],
+  "hints": [
+    { "level": 1, "content": "Use a hash map to store value -> index as you iterate." },
+    { "level": 2, "content": "For each number, check whether (target - num) already exists in the map." }
+  ],
+  "solution": {
+    "code": "function solve(input) { const { nums, target } = input; const map = new Map(); for (let i = 0; i < nums.length; i++) { const complement = target - nums[i]; if (map.has(complement)) return [map.get(complement), i]; map.set(nums[i], i); } return []; }",
+    "explanation": "Store each value's index in a map; for each element, look up whether its complement (target - num) was seen before."
+  }
+}
