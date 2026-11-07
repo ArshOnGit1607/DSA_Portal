@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/eslintrc.json",
+  "root": true,
+  "env": { "node": true, "es2022": true },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "project": ["./tsconfig.json", "./core/tsconfig.json", "./server/tsconfig.json", "./workers/tsconfig.json"]
+  },
+  "plugins": ["@typescript-eslint"],
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "ignorePatterns": ["node_modules", "dist", "build", "coverage", ".expo", "ios", "android", "*.config.js", "jest.config.js", "prettier.config.js"],
+  "rules": {
+    "no-console": "warn",
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/explicit-function-return-type": "off",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "eqeqeq": ["error", "always"],
+    "curly": ["error", "multi-line"]
+  }
+}
