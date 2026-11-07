@@ -2,27 +2,1102 @@ openapi: 3.0.3
 info:
   title: DSA Practice Platform API
   version: 0.0.1
+  description: |
+    Source of truth for /api/v1. JSON over HTTP, JWT Bearer auth.
+    Never change an agreed endpoint, table column, or WebSocket event directly —
+    propose changes in /docs/CHANGE_REQUESTS.md.
 servers:
   - url: http://localhost:3000
     description: Local dev
-paths:
-  /api/v1/health:
-    get:
-      summary: Health check
-      responses:
-        '200':
-          description: OK
-  /api/v1/problems:
-    get:
-      summary: List problems
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: OK
+
+tags:
+  - name: auth
+  - name: problems
+  - name: submissions
+  - name: stats
+  - name: leaderboard
+  - name: daily
+  - name: admin
+  - name: sync
+
+###############################################################################
+# Components (single block: schemas, securitySchemes, responses)
+###############################################################################
 components:
+  schemas:
+    # ---- Standard error format (used by every 4xx/5xx response) ----
+    Error:
+      type: object
+      required: [error, message, statusCode, timestamp, path]
+      properties:
+        error:
+          type: string
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          example: "difficulty must be one of Easy, Medium, Hard"
+        statusCode:
+          type: integer
+          example: 400
+        timestamp:
+          type: string
+          format: date-time
+        path:
+          type: string
+          example: "/api/v1/problems"
+
+    # ---- Keyset cursor pagination ----
+    # Clients paginate by passing the cursor (last seen sort value + id)
+    # from the previous page's `nextCursor` in the `cursor` query param.
+    CursorPage:
+      type: object
+      required: [data, nextCursor]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        nextCursor:
+          type: string
+          nullable: true
+          description: |
+            Opaque cursor for the next page. Pass as `cursor` query param.
+            null when no more pages.
+        total:
+          type: integer
+          nullable: true
+          description: Optional total count (may be expensive; omit for large sets)
+
+    # ---- Auth ----
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          description: access token TTL in seconds
+
+    User:
+      type: object
+      required: [id, username, email, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+          default: user
+        createdAt:
+          type: string
+          format: date-time
+
+    # ---- Problem ----
+    TestCase:
+      type: object
+      required: [input, expected]
+      properties:
+        input:
+          type: string
+          description: JSON-serialized input passed to the user's solve()
+        expected:
+          type: string
+          description: JSON-serialized expected output
+
+    Problem:
+      type: object
+      required: [id, title, topic, difficulty, description, starterCode, testCases, hints, solution]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        topic:
+          type: string
+          example: Arrays
+        difficulty:
+          type: string
+          enum: [Easy, Medium, Hard]
+        description:
+          type: string
+        starterCode:
+          type: string
+        testCases:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestCase'
+        hints:
+          type: array
+          items:
+            type: string
+        solution:
+          type: string
+
+    ProblemSummary:
+      type: object
+      required: [id, title, topic, difficulty]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        topic:
+          type: string
+        difficulty:
+          type: string
+          enum: [Easy, Medium, Hard]
+
+    # ---- Submission ----
+    Submission:
+      type: object
+      required: [id, problemId, userId, status, passed, total, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        problemId:
+          type: string
+        userId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, judged, failed]
+        passed:
+          type: integer
+        total:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              testCaseIndex:
+                type: integer
+              passed:
+                type: boolean
+              actual:
+                type: string
+              expected:
+                type: string
+        createdAt:
+          type: string
+          format: date-time
+        judgedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    SubmissionCreate:
+      type: object
+      required: [problemId, code]
+      properties:
+        problemId:
+          type: string
+        code:
+          type: string
+          description: User's JavaScript solution (must export solve(input))
+
+    # ---- Stats ----
+    StatSummary:
+      type: object
+      required: [attempted, solved, totalProblems]
+      properties:
+        attempted:
+          type: integer
+        solved:
+          type: integer
+        totalProblems:
+          type: integer
+
+    TopicStat:
+      type: object
+      required: [topic, attempted, solved]
+      properties:
+        topic:
+          type: string
+        attempted:
+          type: integer
+        solved:
+          type: integer
+
+    StreakStat:
+      type: object
+      required: [currentStreak, longestStreak, lastSolvedAt]
+      properties:
+        currentStreak:
+          type: integer
+        longestStreak:
+          type: integer
+        lastSolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ---- Leaderboard ----
+    LeaderboardEntry:
+      type: object
+      required: [userId, username, solved, totalScore, rank]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        solved:
+          type: integer
+        totalScore:
+          type: integer
+        rank:
+          type: integer
+
+    # ---- Daily challenge ----
+    DailyChallenge:
+      type: object
+      required: [date, problemId, problem]
+      properties:
+        date:
+          type: string
+          format: date
+        problemId:
+          type: string
+        problem:
+          $ref: '#/components/schemas/Problem'
+
+    # ---- Sync ----
+    SyncPush:
+      type: object
+      required: [problemsAttempted, submissions]
+      properties:
+        problemsAttempted:
+          type: array
+          items:
+            type: string
+        submissions:
+          type: array
+          items:
+            type: object
+
+    SyncPull:
+      type: object
+      required: [problems, submissions]
+      properties:
+        problems:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemSummary'
+        submissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+
+  ###############################################################################
+  # Security schemes
+  ###############################################################################
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+
+  ###############################################################################
+  # Reusable responses
+  ###############################################################################
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Validation or business error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+###############################################################################
+# Paths
+###############################################################################
+paths:
+
+  # ===========================================================================
+  # Auth
+  # ===========================================================================
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: authRegister
+      security: []
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 30
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Username or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: authLogin
+      summary: Login with username/email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Auth tokens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: authRefresh
+      summary: Refresh access token using refresh token cookie
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken]
+                properties:
+                  accessToken:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: authLogout
+      summary: Logout (clear refresh cookie)
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Logged out
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: authMe
+      summary: Get current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ===========================================================================
+  # Topics
+  # ===========================================================================
+  /api/v1/topics:
+    get:
+      tags: [problems]
+      operationId: problemsListTopics
+      summary: List all available topics
+      security: []
+      responses:
+        '200':
+          description: Topic list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [topics]
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      type: string
+                      example: Arrays
+
+  # ===========================================================================
+  # Problems
+  # ===========================================================================
+  /api/v1/problems:
+    get:
+      tags: [problems]
+      operationId: problemsList
+      summary: List problems with optional topic/difficulty filter and keyset pagination
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor from previous page nextCursor
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Page size
+        - in: query
+          name: topic
+          schema:
+            type: string
+        - in: query
+          name: difficulty
+          schema:
+            type: string
+            enum: [Easy, Medium, Hard]
+      responses:
+        '200':
+          description: Paginated problem list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ProblemSummary'
+
+  /api/v1/problems/random:
+    get:
+      tags: [problems]
+      operationId: problemsRandom
+      summary: Get a random problem filtered by topic and/or difficulty
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: topic
+          in: query
+          schema:
+            type: string
+        - name: difficulty
+          in: query
+          schema:
+            type: string
+            enum: [Easy, Medium, Hard]
+      responses:
+        '200':
+          description: Random problem
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/problems/{id}:
+    get:
+      tags: [problems]
+      operationId: problemsGetById
+      summary: Get a single problem by id (includes full test cases and solution)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Problem detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Hints / Solutions
+  # ===========================================================================
+  /api/v1/problems/{id}/hints:
+    get:
+      tags: [problems]
+      operationId: problemsGetHints
+      summary: Get hints for a problem (progressive, first N hints)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: upto
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            description: Return only the first N hints
+      responses:
+        '200':
+          description: Hints list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hints]
+                properties:
+                  hints:
+                    type: array
+                    items:
+                      type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/problems/{id}/solution:
+    get:
+      tags: [problems]
+      operationId: problemsGetSolution
+      summary: Get the reference solution for a problem (locked until solved)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reference solution
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [solution]
+                properties:
+                  solution:
+                    type: string
+        '403':
+          description: Solution not yet unlocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Submissions
+  # ===========================================================================
+  /api/v1/submissions:
+    post:
+      tags: [submissions]
+      operationId: submissionsCreate
+      summary: Submit code for judging (enqueues to BullMQ worker)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionCreate'
+      responses:
+        '202':
+          description: Submission queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submissionId, status]
+                properties:
+                  submissionId:
+                    type: string
+                  status:
+                    type: string
+                    example: queued
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    get:
+      tags: [submissions]
+      operationId: submissionsList
+      summary: List current user's submissions (keyset pagination)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor from previous page nextCursor
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Page size
+        - in: query
+          name: problemId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated submissions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Submission'
+
+  /api/v1/submissions/{id}:
+    get:
+      tags: [submissions]
+      operationId: submissionsGetById
+      summary: Get submission status and results
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Submission detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Submission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Stats
+  # ===========================================================================
+  /api/v1/stats/me:
+    get:
+      tags: [stats]
+      operationId: statsMe
+      summary: Get current user's overall stats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Overall stats
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StatSummary'
+                  - type: object
+                    properties:
+                      streak:
+                        $ref: '#/components/schemas/StreakStat'
+                      topics:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TopicStat'
+
+  /api/v1/stats/me/topics:
+    get:
+      tags: [stats]
+      operationId: statsMeTopics
+      summary: Get per-topic stats for current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Per-topic stats
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [topics]
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TopicStat'
+
+  # ===========================================================================
+  # Leaderboard
+  # ===========================================================================
+  /api/v1/leaderboard:
+    get:
+      tags: [leaderboard]
+      operationId: leaderboardList
+      summary: Global leaderboard sorted by solved count then score
+      security: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque cursor from previous page nextCursor
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Page size
+      responses:
+        '200':
+          description: Leaderboard page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/LeaderboardEntry'
+
+  # ===========================================================================
+  # Daily challenge
+  # ===========================================================================
+  /api/v1/daily-challenge:
+    get:
+      tags: [daily]
+      operationId: dailyGet
+      summary: Get today's daily challenge problem
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Daily challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyChallenge'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Admin
+  # ===========================================================================
+  /api/v1/admin/problems:
+    post:
+      tags: [admin]
+      operationId: adminCreateProblem
+      summary: Create a new problem (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, topic, difficulty, description, starterCode, testCases, hints, solution]
+              properties:
+                title:
+                  type: string
+                topic:
+                  type: string
+                difficulty:
+                  type: string
+                  enum: [Easy, Medium, Hard]
+                description:
+                  type: string
+                starterCode:
+                  type: string
+                testCases:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TestCase'
+                hints:
+                  type: array
+                  items:
+                    type: string
+                solution:
+                  type: string
+      responses:
+        '201':
+          description: Problem created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [admin]
+      operationId: adminUpdateProblem
+      summary: Update an existing problem (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                title:
+                  type: string
+                topic:
+                  type: string
+                difficulty:
+                  type: string
+                  enum: [Easy, Medium, Hard]
+                description:
+                  type: string
+                starterCode:
+                  type: string
+                testCases:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TestCase'
+                hints:
+                  type: array
+                  items:
+                    type: string
+                solution:
+                  type: string
+      responses:
+        '200':
+          description: Problem updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags: [admin]
+      operationId: adminDeleteProblem
+      summary: Delete a problem (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Problem deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/problems/{id}/test-cases:
+    post:
+      tags: [admin]
+      operationId: adminAddTestCases
+      summary: Add test cases to a problem (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [testCases]
+              properties:
+                testCases:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TestCase'
+      responses:
+        '200':
+          description: Test cases added
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [testCases]
+                properties:
+                  testCases:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestCase'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ===========================================================================
+  # Sync (offline-first push/pull)
+  # ===========================================================================
+  /api/v1/sync/push:
+    post:
+      tags: [sync]
+      operationId: syncPush
+      summary: Push local (SQLite/CLI) attempts and submissions to server
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPush'
+      responses:
+        '200':
+          description: Push accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, conflicts]
+                properties:
+                  accepted:
+                    type: integer
+                  conflicts:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/sync/pull:
+    get:
+      tags: [sync]
+      operationId: syncPull
+      summary: Pull server-side problems and submissions to local client
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+            description: Only return records changed after this timestamp
+      responses:
+        '200':
+          description: Data to sync down
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPull'
+        '401':
+          $ref: '#/components/responses/Unauthorized'

@@ -1,4 +1,4 @@
-import { Difficulty, Problem, TestCase, Topic } from './types';
+import { Problem, TestCase } from './types';
 
 export const PROBLEMS: Problem[] = [
   {
