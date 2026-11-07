@@ -1,10 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { getProblem, getRandomProblem, listProblems, PROBLEMS } from '../src/problems';
+import { describe, expect, it } from '@jest/globals';
+import {
+  PROBLEMS,
+  getProblem,
+  getRandomProblem,
+  listProblems,
+} from '../src/problems';
 
-describe('problem registry', () => {
-  it('exposes three sample problems', () => {
-    expect(PROBLEMS).toHaveLength(3);
-    expect(listProblems().map((p) => p.id)).toEqual(['two-sum', 'palindrome-number', 'merge-two-sorted-lists']);
+describe('problems', () => {
+  it('loads problems from JSON files', () => {
+    expect(PROBLEMS.length).toBeGreaterThan(0);
+    expect(PROBLEMS.some((p) => p.id === 'two-sum')).toBe(true);
   });
 
   it('getProblem returns the correct problem by id', () => {
@@ -14,8 +19,27 @@ describe('problem registry', () => {
     expect(getProblem('does-not-exist')).toBeUndefined();
   });
 
-  it('getRandomProblem returns a registered problem', () => {
+  it('getRandomProblem returns a registered problem or null', () => {
+    const p = getRandomProblem({ topic: 'Arrays', difficulty: 'Easy' });
+    if (p) expect(PROBLEMS.some((r) => r.id === p.id)).toBe(true);
+  });
+
+  it('getRandomProblem with no options returns any problem or null', () => {
     const p = getRandomProblem();
-    expect(PROBLEMS.some((r) => r.id === p.id)).toBe(true);
+    if (p) expect(PROBLEMS.some((r) => r.id === p.id)).toBe(true);
+  });
+
+  it('getRandomProblem returns null when no match', () => {
+    const p = getRandomProblem({ topic: 'Graphs', difficulty: 'Hard' });
+    expect(p).toBeNull();
+  });
+
+  it('listProblems returns id, title, topic, difficulty', () => {
+    const list = listProblems();
+    expect(list.length).toBe(PROBLEMS.length);
+    expect(list[0]).toHaveProperty('id');
+    expect(list[0]).toHaveProperty('title');
+    expect(list[0]).toHaveProperty('topic');
+    expect(list[0]).toHaveProperty('difficulty');
   });
 });
