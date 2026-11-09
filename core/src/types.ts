@@ -11,6 +11,7 @@ export type Topic =
   | 'Searching';
 
 export interface TestCase {
+  id?: string;
   input: unknown;
   expected: unknown;
 }
@@ -37,17 +38,20 @@ export interface Problem {
   solution: Solution;
 }
 
+export interface PerTestResult {
+  id: string;
+  passed: boolean;
+  expected: unknown;
+  actual: unknown;
+  runtimeMs: number;
+  error?: string;
+  output?: string;
+}
+
 export interface ExecutionResult {
   problemId: string;
-  passed: number;
-  total: number;
-  results: Array<{
-    testCaseIndex: number;
-    passed: boolean;
-    actual?: unknown;
-    expected?: unknown;
-    error?: string;
-  }>;
+  status: 'passed' | 'failed' | 'error' | 'timeout';
+  perTest: PerTestResult[];
 }
 
 export interface Submission {

@@ -1,15 +1,28 @@
 import { Queue, Worker } from 'bullmq';
+import type { ExecutionResult } from '@dsa-portal/core';
+import { runSubmissionSandbox } from './sandbox/sandbox-runner';
 
 const connection = { host: 'localhost', port: 6379 };
 
 export const submissionQueue = new Queue('submissions', { connection });
 
-export const submissionWorker = new Worker(
+interface SubmissionJobData {
+  submissionId: string;
+  problemId: string;
+  userCode: string;
+  problem?: any;
+}
+
+export const submissionWorker = new Worker<SubmissionJobData, ExecutionResult>(
   'submissions',
   async (job) => {
-    // TODO: integrate with /core executor once storage (Person 2) is wired.
-    console.log('Processing submission job', job.id, job.data);
-    return { status: 'processed' };
+    const data = job.data;
+    return runSubmissionSandbox({
+      submissionId: data.submissionId,
+      problemId: data.problemId,
+      userCode: data.userCode,
+      problem: data.problem,
+    });
   },
   { connection }
 );
