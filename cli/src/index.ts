@@ -104,13 +104,18 @@ async function runSubmission(p: Problem) {
 
   const result: ExecutionResult = submitCode({ problem: p, userCode });
   stats.attempted += 1;
-  if (result.passed === result.total) {
+  const passedCount = result.perTest.filter((r) => r.passed).length;
+  if (result.status === 'passed') {
     stats.solved += 1;
-    console.log(`\n✅ All ${result.passed}/${result.total} test cases passed!`);
+    console.log(`\n✅ All ${passedCount}/${result.perTest.length} test cases passed!`);
+  } else if (result.status === 'timeout') {
+    console.log(`\n⏱️  Submission timed out (${passedCount}/${result.perTest.length} passed).`);
+  } else if (result.status === 'error') {
+    console.log(`\n💥 Submission errored (${passedCount}/${result.perTest.length} passed).`);
   } else {
-    console.log(`\n❌ ${result.passed}/${result.total} test cases passed.`);
+    console.log(`\n❌ ${passedCount}/${result.perTest.length} test cases passed.`);
   }
-  result.results.forEach((r: ExecutionResult['results'][number], i: number) => {
+  result.perTest.forEach((r: ExecutionResult['perTest'][number], i: number) => {
     const status = r.passed ? '✅' : '❌';
     console.log(`${status} Test ${i + 1}: ${r.passed ? 'passed' : 'failed'}`);
     if (!r.passed) {
