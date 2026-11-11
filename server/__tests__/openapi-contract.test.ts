@@ -4,7 +4,10 @@ import { randomUUID } from 'crypto';
 import { parse } from 'yaml';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+import { judgeSubmission, statsServiceStub } from '@dsa-portal/workers';
 import { buildApp } from '../src/app';
+import { InMemoryProblemRepository } from '../src/modules/problems/in-memory-problem.repository';
+import { InMemorySubmissionRepository } from '../src/modules/submissions/in-memory-submission.repository';
 
 // Load the spec once and make component $refs resolvable from any inline schema.
 const raw = JSON.stringify(parse(fs.readFileSync(path.join(__dirname, '../../docs/openapi.yaml'), 'utf8')));
@@ -34,10 +37,16 @@ interface Case {
   status: number;
   token?: 'A' | 'B';
   body?: object;
+  headers?: Record<string, string>;
 }
 
 describe('every implemented route matches /docs/openapi.yaml', () => {
-  const app = buildApp({ logger: false });
+  const deps = {
+    problems: new InMemoryProblemRepository(),
+    submissions: new InMemorySubmissionRepository(),
+    stats: statsServiceStub,
+  };
+  const app = buildApp({ logger: false, problems: deps.problems, submissions: deps.submissions });
   const registered: string[] = [];
   app.addHook('onRoute', (r) => {
     [r.method].flat().filter((m) => m !== 'HEAD').forEach((m) => registered.push(`${m} ${r.url}`));
@@ -58,6 +67,7 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
       payload: { problemId: 'two-sum', code: solve },
     });
     submissionId = res.json().submissionId;
+    await judgeSubmission(submissionId, deps); // the worker's job: unlocks A's solution
   });
   afterAll(() => app.close());
 
@@ -77,6 +87,8 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
     { route: 'GET /api/v1/problems/:id/solution', url: '/api/v1/problems/nope/solution', status: 404, token: 'A' },
     { route: 'POST /api/v1/submissions', url: '/api/v1/submissions', status: 202, token: 'B', body: { problemId: 'two-sum', code: 'function solve() { return [0, 1]; }' } },
     { route: 'POST /api/v1/submissions', url: '/api/v1/submissions', status: 400, token: 'B', body: { problemId: 'two-sum' } },
+    { route: 'POST /api/v1/submissions', url: '/api/v1/submissions', status: 202, token: 'B', body: { problemId: 'two-sum', code: 'function solve() { return [0, 1]; }' }, headers: { 'idempotency-key': 'contract-1' } },
+    { route: 'POST /api/v1/submissions', url: '/api/v1/submissions', status: 409, token: 'B', body: { problemId: 'two-sum', code: 'function solve() { return []; }' }, headers: { 'idempotency-key': 'contract-1' } },
     { route: 'POST /api/v1/submissions', url: '/api/v1/submissions', status: 404, token: 'B', body: { problemId: 'nope', code: 'x' } },
     { route: 'POST /api/v1/submissions', url: '/api/v1/submissions', status: 401, body: { problemId: 'two-sum', code: 'x' } },
     { route: 'GET /api/v1/submissions', url: '/api/v1/submissions?limit=5', status: 200, token: 'A' },
@@ -101,7 +113,7 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
       const res = await app.inject({
         method: c.route.split(' ')[0] as 'GET' | 'POST',
         url: c.url,
-        headers: c.token ? { authorization: `Bearer ${tokens[c.token]}` } : {},
+        headers: { ...c.headers, ...(c.token ? { authorization: `Bearer ${tokens[c.token]}` } : {}) },
         payload: c.body,
       });
       const label = `${c.route} (${c.url}) → ${c.status}`;

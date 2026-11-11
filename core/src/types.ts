@@ -63,6 +63,8 @@ export interface Submission {
   result?: ExecutionResult;
   createdAt: Date;
   judgedAt?: Date;
+  /** Client Idempotency-Key from POST /submissions; unique per user. */
+  idempotencyKey?: string;
 }
 
 export interface User {
@@ -86,6 +88,7 @@ export interface SubmissionRepository {
   save(submission: Submission): Promise<void>;
   findById(id: string): Promise<Submission | null>;
   findByUser(userId: string): Promise<Submission[]>;
+  findByIdempotencyKey(userId: string, key: string): Promise<Submission | null>;
 }
 
 export interface UserRepository {

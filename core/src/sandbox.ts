@@ -1,4 +1,5 @@
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
+import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -9,12 +10,14 @@ import type {
   TestCase,
 } from './types';
 
-interface SandboxOptions {
+export interface SandboxOptions {
   perTestTimeoutMs?: number;
   totalTimeoutMs?: number;
   memoryLimitMb?: number;
   outputCap?: number;
 }
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULTS: Required<SandboxOptions> = {
   perTestTimeoutMs: 2000,
@@ -46,6 +49,45 @@ function prepareTestFiles(userCode: string, input: unknown) {
   };
 }
 
+/** node args + options for one sandboxed child. Shared by the sync and async runners. */
+function childCommand(codePath: string, inputPath: string, options: Required<SandboxOptions>) {
+  const args = [SANDBOX_EXEC_PATH, codePath, inputPath, String(options.outputCap)];
+  const execOptions = {
+    encoding: 'utf8' as const,
+    timeout: options.perTestTimeoutMs,
+    maxBuffer: options.outputCap + 4096,
+    // Minimal env: never leak server secrets (JWT_SECRET, DATABASE_URL) or Jest IPC vars to untrusted code.
+    env: {
+      PATH: process.env.PATH,
+      NODE_OPTIONS: `--max-old-space-size=${options.memoryLimitMb}`,
+    },
+  };
+  return { args, execOptions };
+}
+
+/** Turns the child's stdout (or its failure) into one PerTestResult. */
+function toPerTestResult(
+  tc: TestCase,
+  testId: string,
+  options: Required<SandboxOptions>,
+  stdout: string | undefined,
+  err?: unknown
+): PerTestResult {
+  const base = { id: testId, passed: false, expected: tc.expected, actual: undefined as unknown, runtimeMs: 0 };
+  if (err !== undefined) {
+    const e = err as Error & { killed?: boolean; signal?: string; code?: number | string | null };
+    const timedOut = e.killed || e.signal === 'SIGTERM' || e.code === null;
+    return { ...base, error: timedOut ? `Test timed out after ${options.perTestTimeoutMs}ms` : (e.message ?? String(err)) };
+  }
+  const parsed = JSON.parse((stdout ?? '').trim());
+  const result = { ...base, runtimeMs: parsed.runtimeMs ?? 0, actual: parsed.result, output: parsed.output };
+  if (parsed.status === 'error' || parsed.error) return { ...result, error: parsed.error };
+  const passed = deepEqual(parsed.result, tc.expected);
+  return passed
+    ? { ...result, passed }
+    : { ...result, error: `Expected ${JSON.stringify(tc.expected)}, got ${JSON.stringify(parsed.result)}` };
+}
+
 function runSingleTest(
   userCode: string,
   tc: TestCase,
@@ -53,63 +95,38 @@ function runSingleTest(
   testIndex: number
 ): PerTestResult {
   const testId = tc.id ?? `test-${testIndex}`;
-  const { codePath, inputPath, cleanup } = prepareTestFiles(
-      userCode,
-      tc.input
-  );
-
-  let runtimeMs = 0;
-  let passed = false;
-  let actual: unknown = undefined;
-  let error: string | undefined;
-  let output: string | undefined;
-
+  const { codePath, inputPath, cleanup } = prepareTestFiles(userCode, tc.input);
+  const { args, execOptions } = childCommand(codePath, inputPath, options);
   try {
-    const stdout = execFileSync('node', [SANDBOX_EXEC_PATH, codePath, inputPath, String(options.outputCap)], {
-      encoding: 'utf8',
-      timeout: options.perTestTimeoutMs,
-      maxBuffer: options.outputCap + 4096,
-      // Drop child stderr so untrusted code (or an OOM crash dump) cannot flood the host's logs.
-      stdio: ['ignore', 'pipe', 'ignore'],
-      // Minimal env: never leak server secrets (JWT_SECRET, DATABASE_URL) or Jest IPC vars to untrusted code.
-      env: {
-        PATH: process.env.PATH,
-        NODE_OPTIONS: `--max-old-space-size=${options.memoryLimitMb}`,
-      },
-    });
-    const parsed = JSON.parse(stdout.trim());
-    runtimeMs = parsed.runtimeMs ?? 0;
-    actual = parsed.result;
-    output = parsed.output;
-
-    if (parsed.status === 'error' || parsed.error) {
-      error = parsed.error ?? `Runtime error: ${parsed.error}`;
-    } else {
-      passed = deepEqual(parsed.result, tc.expected);
-      if (!passed) {
-        error = `Expected ${JSON.stringify(tc.expected)}, got ${JSON.stringify(parsed.result)}`;
-      }
-    }
-  } catch (err: unknown) {
-    const e = err as Error & { killed?: boolean; signal?: string; code?: number | null };
-    if (e.killed || e.signal === 'SIGTERM' || e.code === null) {
-      error = `Test timed out after ${options.perTestTimeoutMs}ms`;
-    } else {
-      error = e.message ?? String(err);
-    }
+    // Drop child stderr so untrusted code (or an OOM crash dump) cannot flood the host's logs.
+    const stdout = execFileSync('node', args, { ...execOptions, stdio: ['ignore', 'pipe', 'ignore'] });
+    return toPerTestResult(tc, testId, options, stdout);
+  } catch (err) {
+    return toPerTestResult(tc, testId, options, undefined, err);
   } finally {
     cleanup();
   }
+}
 
-  return {
-    id: testId,
-    passed,
-    expected: tc.expected,
-    actual,
-    runtimeMs,
-    error,
-    output,
-  };
+/** Non-blocking variant: the worker can judge several submissions at once. */
+async function runSingleTestAsync(
+  userCode: string,
+  tc: TestCase,
+  options: Required<SandboxOptions>,
+  testIndex: number
+): Promise<PerTestResult> {
+  const testId = tc.id ?? `test-${testIndex}`;
+  const { codePath, inputPath, cleanup } = prepareTestFiles(userCode, tc.input);
+  const { args, execOptions } = childCommand(codePath, inputPath, options);
+  try {
+    // execFile buffers stderr in memory (capped by maxBuffer); it never reaches the host's logs.
+    const { stdout } = await execFileAsync('node', args, execOptions);
+    return toPerTestResult(tc, testId, options, stdout);
+  } catch (err) {
+    return toPerTestResult(tc, testId, options, undefined, err);
+  } finally {
+    cleanup();
+  }
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -139,9 +156,28 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
+const totalTimeoutResult = (tc: TestCase, i: number): PerTestResult => ({
+  id: tc.id ?? `test-${i}`,
+  passed: false,
+  expected: tc.expected,
+  actual: undefined,
+  runtimeMs: 0,
+  error: 'Total timeout exceeded',
+});
+
+/** Overall verdict: timeout > error (no result produced) > failed (wrong answer) > passed. */
+function finish(problem: Problem, results: PerTestResult[]): ExecutionResult {
+  const crashed = results.filter((r) => r.error && r.actual === undefined);
+  let status: ExecutionResult['status'] = 'passed';
+  if (crashed.some((r) => /timed out|Total timeout/.test(r.error ?? ''))) status = 'timeout';
+  else if (crashed.length) status = 'error';
+  else if (results.some((r) => !r.passed)) status = 'failed';
+  return { problemId: problem.id, status, perTest: results };
+}
+
 /**
  * Runs user code against all test cases in isolated sandbox child processes.
- * Result shape: { status, perTest: [...] }
+ * Blocks the calling thread; used by the CLI. Result shape: { status, perTest: [...] }
  */
 export function submitCodeSandbox(
   problem: Problem,
@@ -149,48 +185,26 @@ export function submitCodeSandbox(
   options: SandboxOptions = {}
 ): ExecutionResult {
   const cfg = { ...DEFAULTS, ...options };
+  const start = Date.now();
+  const results = problem.testCases.map((tc, i) =>
+    Date.now() - start >= cfg.totalTimeoutMs ? totalTimeoutResult(tc, i) : runSingleTest(userCode, tc, cfg, i)
+  );
+  return finish(problem, results);
+}
+
+/** Same as submitCodeSandbox but never blocks the event loop (used by the worker). */
+export async function submitCodeSandboxAsync(
+  problem: Problem,
+  userCode: string,
+  options: SandboxOptions = {}
+): Promise<ExecutionResult> {
+  const cfg = { ...DEFAULTS, ...options };
+  const start = Date.now();
   const results: PerTestResult[] = [];
-  let passedCount = 0;
-  let hasSystemError = false;
-  let hasTimeout = false;
-
-  const startTotal = Date.now();
-
-  for (let i = 0; i < problem.testCases.length; i++) {
-    if (Date.now() - startTotal >= cfg.totalTimeoutMs) {
-      results.push({
-        id: problem.testCases[i].id ?? `test-${i}`,
-        passed: false,
-        expected: problem.testCases[i].expected,
-        actual: undefined,
-        runtimeMs: 0,
-        error: 'Total timeout exceeded',
-      });
-      hasTimeout = true;
-      continue;
-    }
-
-    const tc = problem.testCases[i];
-    const result = runSingleTest(userCode, tc, cfg, i);
-    results.push(result);
-
-    // Distinguish system errors (no result produced) from wrong answers
-    // (result produced but doesn't match expected).
-    if (result.error && result.actual === undefined) {
-      if (result.error.includes('timed out')) hasTimeout = true;
-      else hasSystemError = true;
-    }
-    if (result.passed) passedCount += 1;
+  for (const [i, tc] of problem.testCases.entries()) {
+    results.push(
+      Date.now() - start >= cfg.totalTimeoutMs ? totalTimeoutResult(tc, i) : await runSingleTestAsync(userCode, tc, cfg, i)
+    );
   }
-
-  let status: ExecutionResult['status'] = 'passed';
-  if (hasTimeout) status = 'timeout';
-  else if (hasSystemError) status = 'error';
-  else if (passedCount < results.length) status = 'failed';
-
-  return {
-    problemId: problem.id,
-    status,
-    perTest: results,
-  };
+  return finish(problem, results);
 }

@@ -1,6 +1,13 @@
 import { buildApp } from './app';
+import { closePool } from './db/pool';
+import { PostgresProblemRepository, PostgresSubmissionRepository } from './db/repositories';
 
-const app = buildApp();
+const app = buildApp({
+  problems: new PostgresProblemRepository(),
+  submissions: new PostgresSubmissionRepository(),
+});
+app.addHook('onClose', closePool);
+
 const port = Number(process.env.PORT || 3000);
 const host = '0.0.0.0';
 
@@ -11,3 +18,7 @@ app.listen({ port, host }, (err, address) => {
   }
   app.log.info(`Server listening at ${address}`);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => void app.close().then(() => process.exit(0)));
+}

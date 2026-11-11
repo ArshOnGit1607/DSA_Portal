@@ -2,6 +2,7 @@ import type {
   Submission,
   SubmissionRepository,
   ExecutionResult,
+  PerTestResult,
 } from '@dsa-portal/core';
 import { pool, withTransaction } from '../pool';
 
@@ -13,9 +14,18 @@ interface SubmissionRow {
   status: 'queued' | 'running' | 'judged' | 'failed';
   passed: number;
   total: number;
-  results: any;
+  results: Array<PerTestResult & { testCaseIndex: number }> | null;
   created_at: Date;
-  judged_at?: Date;
+  judged_at: Date | null;
+  idempotency_key: string | null;
+}
+
+/** Rebuilds the overall verdict from stored per-test rows (same rules as core's sandbox). */
+function verdictOf(perTest: PerTestResult[]): ExecutionResult['status'] {
+  const crashed = perTest.filter((t) => t.error && t.actual === undefined);
+  if (crashed.some((t) => /timed out|timeout/i.test(t.error ?? ''))) return 'timeout';
+  if (crashed.length) return 'error';
+  return perTest.length > 0 && perTest.every((t) => t.passed) ? 'passed' : 'failed';
 }
 
 export class PostgresSubmissionRepository implements SubmissionRepository {
@@ -32,25 +42,27 @@ export class PostgresSubmissionRepository implements SubmissionRepository {
       }
       const problemUuid = probRes.rows[0].id;
 
-      const passed = submission.result?.passed ?? 0;
-      const total = submission.result?.total ?? 0;
-      const resultsJson = submission.result?.results
-        ? JSON.stringify(submission.result.results)
+      const perTest = submission.result?.perTest ?? [];
+      const passed = perTest.filter((t) => t.passed).length;
+      const total = perTest.length;
+      const resultsJson = submission.result
+        ? JSON.stringify(perTest.map((t, testCaseIndex) => ({ testCaseIndex, ...t })))
         : null;
 
       const insertOrUpdateSql = `
-        INSERT INTO submissions (id, user_id, problem_id, code, status, passed, total, results, created_at, judged_at)
+        INSERT INTO submissions (id, user_id, problem_id, code, status, passed, total, results, created_at, judged_at, idempotency_key)
         VALUES (
           COALESCE($1::uuid, gen_random_uuid()),
           $2::uuid,
           $3::uuid,
           $4,
-          $5,
+          $5::submission_status,
           $6,
           $7,
           $8,
           $9,
-          CASE WHEN $5 IN ('judged', 'failed') THEN now() ELSE NULL END
+          $10,
+          $11
         )
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
@@ -70,6 +82,8 @@ export class PostgresSubmissionRepository implements SubmissionRepository {
         total,
         resultsJson,
         submission.createdAt || new Date(),
+        submission.judgedAt ?? null,
+        submission.idempotencyKey ?? null,
       ]);
 
       // If submission is judged, update user_problem_stats
@@ -122,25 +136,33 @@ export class PostgresSubmissionRepository implements SubmissionRepository {
     return res.rows.map((row) => this.mapRowToSubmission(row));
   }
 
-  private mapRowToSubmission(row: SubmissionRow): Submission {
-    let result: ExecutionResult | undefined = undefined;
-    if (row.results || row.status === 'judged') {
-      result = {
-        problemId: row.problem_slug,
-        passed: row.passed,
-        total: row.total,
-        results: Array.isArray(row.results) ? row.results : [],
-      };
-    }
+  async findByIdempotencyKey(userId: string, key: string): Promise<Submission | null> {
+    const res = await pool.query<SubmissionRow>(
+      `SELECT s.*, p.slug AS problem_slug
+       FROM submissions s
+       JOIN problems p ON s.problem_id = p.id
+       WHERE s.user_id = $1::uuid AND s.idempotency_key = $2
+       LIMIT 1;`,
+      [userId, key]
+    );
+    return res.rows[0] ? this.mapRowToSubmission(res.rows[0]) : null;
+  }
 
+  private mapRowToSubmission(row: SubmissionRow): Submission {
+    // results stores core PerTestResult rows (+ testCaseIndex), so the ExecutionResult round-trips.
+    const perTest: PerTestResult[] | undefined = row.results?.map(({ testCaseIndex: _i, ...t }) => t);
     return {
       id: row.id,
       problemId: row.problem_slug,
       userId: row.user_id,
       code: row.code,
       status: row.status,
-      result,
+      result: perTest
+        ? { problemId: row.problem_slug, status: verdictOf(perTest), perTest }
+        : undefined,
       createdAt: row.created_at,
+      judgedAt: row.judged_at ?? undefined,
+      idempotencyKey: row.idempotency_key ?? undefined,
     };
   }
 }

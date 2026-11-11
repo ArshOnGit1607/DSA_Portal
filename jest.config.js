@@ -11,7 +11,11 @@ module.exports = {
   ],
   testEnvironment: 'node',
   // Test against core's source so server/workers tests never run a stale core/dist build.
-  moduleNameMapper: { '^@dsa-portal/core$': '<rootDir>/core/src/index.ts' },
+  moduleNameMapper: {
+    '^@dsa-portal/core$': '<rootDir>/core/src/index.ts',
+    '^@dsa-portal/workers$': '<rootDir>/workers/src/index.ts',
+    '^@dsa-portal/server/dist/(.*)$': '<rootDir>/server/src/$1',
+  },
   passWithNoTests: true,
   transform: {
     '^.+\\.ts$': ['ts-jest', { isolatedModules: true }],

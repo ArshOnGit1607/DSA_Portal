@@ -1,15 +1,15 @@
 import { randomUUID } from 'crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { submitCodeSandbox } from '@dsa-portal/core';
 import type { ProblemRepository, Submission, SubmissionRepository } from '@dsa-portal/core';
-import { decodeCursor, keysetPage, notFound } from '../../lib/http';
+import { decodeCursor, HttpError, keysetPage, notFound } from '../../lib/http';
 import { findProblemOr404, IdParams, PageQuery } from '../problems/routes';
 
 const SubmissionCreate = z.object({
   problemId: z.string().min(1),
   code: z.string().min(1).max(100_000),
 });
+const IdempotencyKey = z.string().min(1).max(128).optional();
 
 /** Core Submission → OpenAPI Submission. */
 export function toApiSubmission(s: Submission) {
@@ -41,31 +41,46 @@ export const submissionRoutes: FastifyPluginAsync<{
 }> = async (app, { problems, submissions }) => {
   app.post('/submissions', { onRequest: app.authenticate }, async (req, reply) => {
     const body = SubmissionCreate.parse(req.body);
+    const key = IdempotencyKey.parse(req.headers['idempotency-key']);
+    const userId = req.user.sub;
+
+    // A retry with the same key returns the first submission instead of judging twice.
+    // Returns data, never `reply`: Fastify's reply is thenable, so awaiting it would swallow it.
+    const findReplay = async () => {
+      const existing = key ? await submissions.findByIdempotencyKey(userId, key) : null;
+      if (existing && (existing.problemId !== body.problemId || existing.code !== body.code)) {
+        throw new HttpError(409, 'IDEMPOTENCY_KEY_REUSED', 'Idempotency-Key was already used with a different request body');
+      }
+      return existing;
+    };
+    const accepted = (s: Submission) => reply.code(202).send({ submissionId: s.id, status: s.status });
+
+    const replay = await findReplay();
+    if (replay) return accepted(replay);
+
     const problem = await findProblemOr404(problems, body.problemId);
     const submission: Submission = {
       id: randomUUID(),
       problemId: problem.id,
-      userId: req.user.sub,
+      userId,
       code: body.code,
-      status: 'running',
+      status: 'queued',
       createdAt: new Date(),
+      idempotencyKey: key,
     };
-    await submissions.save(submission);
-
-    // shortcut: judged synchronously and blocks the event loop while the sandbox runs; Day 5 moves this to a BullMQ worker.
     try {
-      submission.result = submitCodeSandbox(problem, body.code);
-      submission.status = 'judged';
+      // The insert also wakes a worker (pg_notify trigger, migration 002).
+      await submissions.save(submission);
     } catch (err) {
-      req.log.error({ err, submissionId: submission.id }, 'sandbox run failed');
-      submission.status = 'failed';
+      // Two concurrent retries with one key: the unique index lets only one insert win.
+      if (key && (err as { code?: string }).code === '23505') {
+        const raced = await findReplay();
+        if (raced) return accepted(raced);
+      }
+      throw err;
     }
-    submission.judgedAt = new Date();
-    await submissions.save(submission);
-    req.log.info({ submissionId: submission.id, status: submission.result?.status }, 'submission judged');
-
-    // 202 + id keeps the contract identical when Day 5 makes judging async.
-    return reply.code(202).send({ submissionId: submission.id, status: submission.status });
+    req.log.info({ submissionId: submission.id, problemId: problem.id }, 'submission queued');
+    return accepted(submission);
   });
 
   app.get('/submissions', { onRequest: app.authenticate }, async (req) => {

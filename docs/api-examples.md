@@ -1,19 +1,24 @@
-# API examples (Day 4)
+# API examples (Days 4–5)
 
-curl examples for every endpoint implemented on Day 4. Contract: `/docs/openapi.yaml`.
+curl examples for every endpoint implemented so far. Contract: `/docs/openapi.yaml`.
 Auth, stats, leaderboard, daily-challenge, admin and sync endpoints come later (Persons 2/3, Days 5–7).
 
 ## Setup
 
 ```bash
 npm install
+createdb dsa_portal                                   # once, on your local PostgreSQL
+export DATABASE_URL=postgresql://postgres@localhost:5432/dsa_portal
+npm run db:migrate && npm run db:seed                 # 40 problems + users admin/student
 npm run build
-npm run start -w server          # or: npm run dev -w server  (listens on PORT, default 3000)
+npm run start -w server                               # terminal 1 (PORT, default 3000)
+npm run start -w workers                              # terminal 2: judges queued submissions
 ```
 
 ```bash
 B=http://localhost:3000/api/v1
 # TEMP until Person 3's /auth/login is merged: sign a dev token with the same JWT_SECRET as the server.
+# Defaults to the seeded `student` user; submissions must belong to a real row in `users`.
 TOKEN=$(npm run -s dev:token -w server)
 H="Authorization: Bearer $TOKEN"
 ```
@@ -37,7 +42,7 @@ curl -s $B/health
 
 ```bash
 curl -s $B/topics
-# {"topics":["Arrays","LinkedList","Strings"]}
+# {"topics":["Arrays","Dynamic Programming","Graphs","LinkedList","Searching","Sorting","Strings","Trees"]}
 ```
 
 ## Problems
@@ -71,14 +76,19 @@ curl -s $B/problems/two-sum/solution -H "$H"
 ## Submissions
 
 ```bash
-# Submit (judged synchronously on Day 4; still returns 202 so Day 5's queue keeps the same contract)
+# Submit: saved as `queued` and returned at once; a worker process judges it in the background
 curl -s -X POST $B/submissions -H "$H" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: my-retry-key-1' \
   -d '{"problemId":"two-sum","code":"function solve({ nums, target }) { const m = new Map(); for (let i = 0; i < nums.length; i++) { if (m.has(target - nums[i])) return [m.get(target - nums[i]), i]; m.set(nums[i], i); } }"}'
-# {"submissionId":"e2ba8898-...","status":"judged"}
+# {"submissionId":"93b43641-...","status":"queued"}
 
-# Status + per-test results (404 for other users' submissions)
-curl -s $B/submissions/e2ba8898-... -H "$H"
-# {"id":"e2ba8898-...","status":"judged","passed":3,"total":3,"results":[{"testCaseIndex":0,"passed":true,"actual":"[0,1]","expected":"[0,1]"},...],...}
+# Same request + same Idempotency-Key again (e.g. after a network timeout): same submission, no second job
+# {"submissionId":"93b43641-...","status":"running"}
+# Same key with a different body → 409 IDEMPOTENCY_KEY_REUSED
+
+# Poll until status is judged (or failed); 404 for other users' submissions
+curl -s $B/submissions/93b43641-... -H "$H"
+# {"id":"93b43641-...","status":"judged","passed":5,"total":5,"results":[{"testCaseIndex":0,"passed":true,"actual":"[0,1]","expected":"[0,1]"},...],"judgedAt":"..."}
 
 # My submissions, newest first, optional problemId filter, keyset pagination
 curl -s "$B/submissions?limit=5&problemId=two-sum" -H "$H"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { submitCodeSandbox } from '../src/sandbox';
+import { submitCodeSandbox, submitCodeSandboxAsync } from '../src/sandbox';
 import { loadProblems } from '../src/problem-loader';
 
 import path from 'path';
@@ -197,5 +197,31 @@ describe('sandbox — escape attempts (must never reach the real process)', () =
     const code = `Object.prototype.toJSON = function () { return { status: 'ok', result: [0, 1] }; }; function solve() { return null; }`;
     const result = submitCodeSandbox(twoSum, code, shortTimeout);
     expect(result.status).not.toBe('passed');
+  });
+});
+
+describe('sandbox — async runner (used by the worker)', () => {
+  const opts = { perTestTimeoutMs: 1000, totalTimeoutMs: 10000 };
+
+  it('gives the same verdicts as the sync runner', async () => {
+    expect((await submitCodeSandboxAsync(twoSum, correctCode, opts)).status).toBe('passed');
+    expect((await submitCodeSandboxAsync(twoSum, wrongCode, opts)).status).toBe('failed');
+    expect((await submitCodeSandboxAsync(twoSum, `function solve() { throw new Error('boom'); }`, opts)).status).toBe('error');
+  });
+
+  it('contains an infinite loop and an escape attempt', async () => {
+    expect((await submitCodeSandboxAsync(twoSum, `function solve() { while (true) {} }`, opts)).status).toBe('timeout');
+    const escape = `function solve() { try { return typeof console.log.constructor('return process')().pid; } catch (e) { return 'blocked'; } }`;
+    const r = await submitCodeSandboxAsync(twoSum, escape, opts);
+    expect(r.perTest.map((t) => t.actual)).not.toContain('number');
+  });
+
+  it('does not block the event loop: two slow submissions run in parallel', async () => {
+    const slow = { ...twoSum, testCases: twoSum.testCases.slice(0, 1) };
+    const loop = `function solve() { while (true) {} }`;
+    const start = Date.now();
+    await Promise.all([submitCodeSandboxAsync(slow, loop, opts), submitCodeSandboxAsync(slow, loop, opts)]);
+    // Sequential would take >= 2 x 1000 ms.
+    expect(Date.now() - start).toBeLessThan(1900);
   });
 });

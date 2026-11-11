@@ -60,6 +60,8 @@ export async function migrateUp(): Promise<{ applied: string[]; skipped: string[
 
     console.log(`[Migration UP] Successfully applied ${file}`);
     applied.push(file);
+    // 001_initial_schema.sql (kept for docker init) and .up.sql share a key: apply it only once.
+    executedNames.add(migrationKey);
   }
 
   return { applied, skipped };
