@@ -71,13 +71,22 @@ function toPerTestResult(
   testId: string,
   options: Required<SandboxOptions>,
   stdout: string | undefined,
-  err?: unknown
+  err?: unknown,
+  elapsedMs = 0
 ): PerTestResult {
   const base = { id: testId, passed: false, expected: tc.expected, actual: undefined as unknown, runtimeMs: 0 };
   if (err !== undefined) {
-    const e = err as Error & { killed?: boolean; signal?: string; code?: number | string | null };
-    const timedOut = e.killed || e.signal === 'SIGTERM' || e.code === null;
-    return { ...base, error: timedOut ? `Test timed out after ${options.perTestTimeoutMs}ms` : (e.message ?? String(err)) };
+    // Measured, not guessed from exit codes: an out-of-memory crash or an oversized result
+    // also kills the child, but long before the time limit.
+    const timedOut = elapsedMs >= options.perTestTimeoutMs;
+    const e = err as { message?: string; code?: unknown; signal?: string | null };
+    // Plain messages for learners; raw errors would also show server file paths.
+    const message = /maxBuffer|ENOBUFS/.test(`${e.code} ${e.message}`)
+      ? 'Output too large'
+      : e.signal
+        ? `Crashed (${e.signal}), most likely out of memory`
+        : (e.message ?? String(err));
+    return { ...base, error: timedOut ? `Test timed out after ${options.perTestTimeoutMs}ms` : message };
   }
   const parsed = JSON.parse((stdout ?? '').trim());
   const result = { ...base, runtimeMs: parsed.runtimeMs ?? 0, actual: parsed.result, output: parsed.output };
@@ -97,12 +106,13 @@ function runSingleTest(
   const testId = tc.id ?? `test-${testIndex}`;
   const { codePath, inputPath, cleanup } = prepareTestFiles(userCode, tc.input);
   const { args, execOptions } = childCommand(codePath, inputPath, options);
+  const started = Date.now();
   try {
     // Drop child stderr so untrusted code (or an OOM crash dump) cannot flood the host's logs.
     const stdout = execFileSync('node', args, { ...execOptions, stdio: ['ignore', 'pipe', 'ignore'] });
     return toPerTestResult(tc, testId, options, stdout);
   } catch (err) {
-    return toPerTestResult(tc, testId, options, undefined, err);
+    return toPerTestResult(tc, testId, options, undefined, err, Date.now() - started);
   } finally {
     cleanup();
   }
@@ -118,12 +128,13 @@ async function runSingleTestAsync(
   const testId = tc.id ?? `test-${testIndex}`;
   const { codePath, inputPath, cleanup } = prepareTestFiles(userCode, tc.input);
   const { args, execOptions } = childCommand(codePath, inputPath, options);
+  const started = Date.now();
   try {
     // execFile buffers stderr in memory (capped by maxBuffer); it never reaches the host's logs.
     const { stdout } = await execFileAsync('node', args, execOptions);
     return toPerTestResult(tc, testId, options, stdout);
   } catch (err) {
-    return toPerTestResult(tc, testId, options, undefined, err);
+    return toPerTestResult(tc, testId, options, undefined, err, Date.now() - started);
   } finally {
     cleanup();
   }

@@ -43,7 +43,7 @@ Stats hook: `StatsService.onSubmissionJudged(submission)` in `workers/src/judge.
 ## For Person 2 (database, DevOps)
 - **No Redis is needed for Day 5.** Requirements are on PostgreSQL: migrations 001 + 002 applied, one extra long-lived connection per worker process (for `LISTEN`), pool size ≥ `WORKER_CONCURRENCY + 2`.
 - I changed files in `/server/src/db` with my user's approval so Day 5 could run end to end. Please review CR-007 in `/docs/CHANGE_REQUESTS.md`.
-- Docker's init script only mounts `001_initial_schema.sql`; run `npm run db:migrate` to get 002.
+- Docker no longer creates the schema at boot (that left `_migrations` empty and broke `db:migrate`); always run `npm run db:migrate` after `npm run db:up`.
 
 ## Known issues / next
 1. A worker killed with SIGKILL leaves its rows in `running` forever (no stalled-job recovery yet) → Day 6.

@@ -62,3 +62,12 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Please review:** `PostgresProblemRepository.findAll` runs 1 + 3 queries per problem (40 problems → 121 queries per list call); worth a JOIN before the Day 9 load test. Docker's init script only mounts 001, so docker users must still run `npm run db:migrate` for 002.
 - **Status:** done, needs Person 2's review
 - **Approved by:** —
+
+## CR-008
+- **Proposed by:** Person 1 (audit after Day 5), **for Person 2**
+- **Changes already made (approved by Person 1's user):**
+  1. `infra/docker-compose.yml`: removed the `docker-entrypoint-initdb.d` mount and deleted the duplicate `001_initial_schema.sql`. The init script created the schema without recording it in `_migrations`, so `npm run db:migrate` then crashed ("type user_role already exists") and never applied 002. Setup is now `npm run db:up && npm run db:migrate && npm run db:seed`. `docs/infra/docker.md` updated.
+  2. `seeds/problems-data.ts`: `binary-tree-level-order-traversal` test 5 used LeetCode's tree format (`[1, null, 2, null, 3]`) while every solution uses heap order, so the reference solution failed it. Now `[1, null, 2, null, null, null, 3]`, and all five tree descriptions say the array is in heap order (children of `i` at `2i + 1` and `2i + 2`).
+- **Checked:** all 40 seed reference solutions (and the 3 core ones) pass their own tests; a fresh database migrates 001 + 002 once.
+- **Status:** done, needs Person 2's review
+- **Approved by:** —

@@ -69,7 +69,12 @@ export async function startWorker({ pool, deps, concurrency, pollMs, log = conso
       } catch (err) {
         log.error(`[worker ${n}] job ${id ?? '(claim)'} failed`, err);
         // shortcut: no retry yet, the submission is marked failed; Day 6 adds retries + a dead-letter list.
-        if (id) await pool.query(`UPDATE submissions SET status = 'failed', judged_at = now() WHERE id = $1`, [id]).catch(() => {});
+        // Only if still running: an error after the result was saved (e.g. the stats hook) must not erase it.
+        if (id) {
+          await pool
+            .query(`UPDATE submissions SET status = 'failed', judged_at = now() WHERE id = $1 AND status = 'running'`, [id])
+            .catch(() => {});
+        }
         if (!id) await idle(); // DB down: back off instead of spinning
       }
     }

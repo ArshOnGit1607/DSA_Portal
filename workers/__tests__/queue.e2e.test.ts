@@ -114,4 +114,26 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const s = (await app.inject({ url: `/api/v1/submissions/${res.json().submissionId}`, headers: auth })).json();
     expect(s.status).toBe('judged'); // finished, not left 'running'
   }, 30000);
+
+  // Runs after the SIGTERM test, so the separate worker is gone and this in-process one gets the job.
+  it('a failing stats hook never erases a saved result', async () => {
+    const repos = await import('../../server/src/db/repositories');
+    const { startWorker } = await import('../src/pg-queue');
+    const res = await submit('function solve() { return [0, 1]; }'); // passes 2 of 5
+    const w = await startWorker({
+      pool,
+      concurrency: 1,
+      pollMs: 100,
+      log: { info() {}, error() {} },
+      deps: {
+        problems: new repos.PostgresProblemRepository(),
+        submissions: new repos.PostgresSubmissionRepository(),
+        stats: { onSubmissionJudged: async () => { throw new Error('stats service down'); } },
+      },
+    });
+    await waitForResult(res.json().submissionId);
+    await w.stop(); // lets the worker's error handler finish before we look
+    const s = (await app.inject({ url: `/api/v1/submissions/${res.json().submissionId}`, headers: auth })).json();
+    expect(s).toMatchObject({ status: 'judged', passed: 2, total: 5 });
+  }, 20000);
 });

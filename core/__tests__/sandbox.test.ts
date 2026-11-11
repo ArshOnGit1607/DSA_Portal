@@ -225,3 +225,22 @@ describe('sandbox — async runner (used by the worker)', () => {
     expect(Date.now() - start).toBeLessThan(1900);
   });
 });
+
+describe('sandbox — failure labels', () => {
+  const one = { ...twoSum, testCases: twoSum.testCases.slice(0, 1) };
+  const opts = { perTestTimeoutMs: 2000, memoryLimitMb: 32 };
+  const bomb = `function solve() { const a = []; while (true) { a.push(new Array(1e6).fill('x')); } }`;
+  const huge = `function solve() { return 'x'.repeat(200000); }`;
+
+  it.each([
+    ['sync', (code: string) => Promise.resolve(submitCodeSandbox(one, code, opts))],
+    ['async', (code: string) => submitCodeSandboxAsync(one, code, opts)],
+  ])('%s: out of memory and oversized output are errors, not timeouts', async (_name, run) => {
+    const oom = (await run(bomb)).perTest[0];
+    expect(oom.error).toMatch(/out of memory/);
+    expect((await run(bomb)).status).toBe('error');
+    const big = await run(huge);
+    expect(big.status).toBe('error');
+    expect(big.perTest[0].error).toBe('Output too large');
+  });
+});

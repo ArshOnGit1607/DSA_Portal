@@ -1,7 +1,6 @@
 import * as readline from 'readline';
-import * as path from 'path';
 import {
-  loadProblems,
+  PROBLEMS,
   selectRandomProblem,
   submitCode,
   HintService,
@@ -12,29 +11,19 @@ import {
   type Difficulty,
 } from '@dsa-portal/core';
 
-const PROBLEMS_DIR = path.join(__dirname, '..', 'problems');
-
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-let problems: Problem[] = [];
+// Same validated problem set the server's in-memory mode uses (core/problems).
+const problems: Problem[] = PROBLEMS;
 const recentIds: string[] = [];
 const MAX_RECENT = 5;
 const stats = { attempted: 0, solved: 0 };
 
 const hintService = new HintService();
 const solutionService = new SolutionService();
-
-function load() {
-  try {
-    problems = loadProblems(PROBLEMS_DIR);
-  } catch (err) {
-    console.error('Failed to load problems:', err);
-    process.exit(1);
-  }
-}
 
 function prompt(question: string): Promise<string> {
   return new Promise((resolve) => rl.question(question, resolve));
@@ -146,7 +135,6 @@ async function showSolution(p: Problem) {
 }
 
 async function main() {
-  load();
   console.log('Welcome to DSA Practice CLI');
 
   for (;;) {

@@ -15,7 +15,7 @@
     { "level": 2, "content": "Repeatedly attach the smaller of the two current nodes." }
   ],
   "solution": {
-    "code": "function solve(input) { const { list1, list2 } = input; const dummy = { next: null }; let tail = dummy; let a = list1, b = list2; while (a && b) { if (a[0] <= b[0]) { tail.next = a; a = a.next; } else { tail.next = b; b = b.next; } tail = tail.next; } tail.next = a || b; return dummy.next; }",
-    "explanation": "Merge by repeatedly attaching the smaller head node to a tail pointer, then append any remaining nodes."
+    "code": "function solve(input) { const { list1, list2 } = input; const out = []; let i = 0, j = 0; while (i < list1.length && j < list2.length) { out.push(list1[i] <= list2[j] ? list1[i++] : list2[j++]); } return out.concat(list1.slice(i), list2.slice(j)); }",
+    "explanation": "Walk both sorted arrays with two pointers, always taking the smaller head; then append whatever is left of the other array. O(n + m) time."
   }
 }
