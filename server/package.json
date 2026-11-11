@@ -6,17 +6,22 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "dev:token": "node -e \"const s=require('fast-jwt').createSigner({key:process.env.JWT_SECRET||'dev-secret-change-me',expiresIn:3600000});console.log(s({sub:process.argv[1]||require('crypto').randomUUID()}))\""
   },
   "dependencies": {
     "@fastify/cors": "^9.0.0",
     "@fastify/jwt": "^8.0.0",
     "fastify": "^4.26.0",
-    "@dsa-portal/core": "*"
+    "@dsa-portal/core": "*",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
-    "@types/node": "^20.11.0"
+    "@types/node": "^20.11.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^2.1.1",
+    "yaml": "^2.9.1"
   }
 }

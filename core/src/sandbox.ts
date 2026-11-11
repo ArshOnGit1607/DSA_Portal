@@ -25,25 +25,22 @@ const DEFAULTS: Required<SandboxOptions> = {
 
 /**
  * Path to the sandbox wrapper script executed inside each child process.
- * Read from src/ at runtime so no template-literal escaping issues arise.
+ * Lives next to this file in both src/ and dist/ (copied by tsc allowJs).
  */
 const SANDBOX_EXEC_PATH = path.join(__dirname, 'sandbox-exec.js');
 
 /**
- * Reads the sandbox wrapper and injects the user code at the __USER_CODE__
- * placeholder. Writes wrapper + input to temp files for the child process.
+ * Writes user code and input to their own temp files. User code is never pasted
+ * into the wrapper's source, so it cannot break out into host-side code.
  */
 function prepareTestFiles(userCode: string, input: unknown) {
-  const wrapperSource = fs.readFileSync(SANDBOX_EXEC_PATH, 'utf8');
-  const wrapperCode = wrapperSource.replace('__USER_CODE__', userCode + '\n');
-
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsa-sandbox-'));
-  const wrapperPath = path.join(tmpDir, 'wrapper.js');
+  const codePath = path.join(tmpDir, 'code.js');
   const inputPath = path.join(tmpDir, 'input.json');
-  fs.writeFileSync(wrapperPath, wrapperCode);
+  fs.writeFileSync(codePath, userCode);
   fs.writeFileSync(inputPath, JSON.stringify(input));
   return {
-    wrapperPath,
+    codePath,
     inputPath,
     cleanup: () => fs.rmSync(tmpDir, { recursive: true, force: true }),
   };
@@ -56,7 +53,7 @@ function runSingleTest(
   testIndex: number
 ): PerTestResult {
   const testId = tc.id ?? `test-${testIndex}`;
-  const { wrapperPath, inputPath, cleanup } = prepareTestFiles(
+  const { codePath, inputPath, cleanup } = prepareTestFiles(
       userCode,
       tc.input
   );
@@ -68,12 +65,15 @@ function runSingleTest(
   let output: string | undefined;
 
   try {
-    const stdout = execFileSync('node', [wrapperPath, inputPath, String(options.outputCap)], {
+    const stdout = execFileSync('node', [SANDBOX_EXEC_PATH, codePath, inputPath, String(options.outputCap)], {
       encoding: 'utf8',
       timeout: options.perTestTimeoutMs,
       maxBuffer: options.outputCap + 4096,
+      // Drop child stderr so untrusted code (or an OOM crash dump) cannot flood the host's logs.
+      stdio: ['ignore', 'pipe', 'ignore'],
+      // Minimal env: never leak server secrets (JWT_SECRET, DATABASE_URL) or Jest IPC vars to untrusted code.
       env: {
-        ...process.env,
+        PATH: process.env.PATH,
         NODE_OPTIONS: `--max-old-space-size=${options.memoryLimitMb}`,
       },
     });

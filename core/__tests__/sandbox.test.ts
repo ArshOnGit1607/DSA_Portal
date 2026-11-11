@@ -148,3 +148,54 @@ describe('sandbox — security (hostile samples must be contained)', () => {
     expect(result.perTest.every((r) => !r.passed)).toBe(true);
   });
 });
+
+describe('sandbox — escape attempts (must never reach the real process)', () => {
+  const shortTimeout = { perTestTimeoutMs: 1500, totalTimeoutMs: 10000, memoryLimitMb: 64, outputCap: 50000 };
+  const tryEscape = (expr: string) =>
+    `function solve(input) { try { const P = ${expr}; return P && typeof P.pid === 'number' ? 'ESCAPED' : 'contained'; } catch (e) { return 'contained'; } }`;
+
+  it.each([
+    ['host function constructor via console.log', "console.log.constructor('return process')()"],
+    ['host function constructor via input object', "input.constructor.constructor('return process')()"],
+    ['global object constructor', "this.constructor.constructor('return process')()"],
+    ['context Function from a string', "(function(){}).constructor('return process')()"],
+    ['an error object', "new Error().constructor.constructor('return process')()"],
+  ])('blocks %s', (_name, expr) => {
+    const result = submitCodeSandbox(twoSum, tryEscape(expr), shortTimeout);
+    expect(result.perTest.map((r) => r.actual)).not.toContain('ESCAPED');
+  });
+
+  it('cannot break out of the wrapper source with a backtick', () => {
+    const forge = "process.stdout.write(JSON.stringify({ status: 'ok', result: [0, 1] }));";
+    const code = 'function solve() { return null; }`; ' + forge + ' process.exit(0); `';
+    const result = submitCodeSandbox(twoSum, code, shortTimeout);
+    expect(result.status).not.toBe('passed');
+  });
+
+  it('cannot forge a passing verdict by replacing JSON.stringify', () => {
+    const code = `JSON.stringify = () => '{"status":"ok","result":[0,1]}'; function solve() { return null; }`;
+    const result = submitCodeSandbox(twoSum, code, shortTimeout);
+    expect(result.status).not.toBe('passed');
+  });
+
+  it("keeps user code containing $' and $& intact", () => {
+    const result = submitCodeSandbox(twoSum, `const tag = "$' $&";\n${correctCode}`, shortTimeout);
+    expect(result.status).toBe('passed');
+  });
+
+  it('keeps solutions declared with const working', () => {
+    const result = submitCodeSandbox(twoSum, correctCode.replace('function solve(input)', 'const solve = (input) =>'), shortTimeout);
+    expect(result.status).toBe('passed');
+  });
+
+  it('blocks eval / Function code generation inside the sandbox', () => {
+    const result = submitCodeSandbox(twoSum, `function solve() { return Function('return 1')(); }`, shortTimeout);
+    expect(result.perTest[0].error).toMatch(/Code generation from strings disallowed/);
+  });
+
+  it('cannot fake its own verdict through Object.prototype.toJSON', () => {
+    const code = `Object.prototype.toJSON = function () { return { status: 'ok', result: [0, 1] }; }; function solve() { return null; }`;
+    const result = submitCodeSandbox(twoSum, code, shortTimeout);
+    expect(result.status).not.toBe('passed');
+  });
+});

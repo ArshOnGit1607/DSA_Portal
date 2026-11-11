@@ -62,6 +62,7 @@ export interface Submission {
   status: 'queued' | 'running' | 'judged' | 'failed';
   result?: ExecutionResult;
   createdAt: Date;
+  judgedAt?: Date;
 }
 
 export interface User {
