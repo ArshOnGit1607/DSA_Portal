@@ -28,7 +28,14 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "jest",
-    "build": "npm run build -w core -w server -w workers"
+    "build": "npm run build -w core -w server -w workers",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:migrate:down": "npm run db:migrate:down -w server",
+    "db:seed": "npm run db:seed -w server",
+    "db:reset": "npm run db:reset -w server",
+    "db:import-legacy": "npm run db:import-legacy -w server"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
