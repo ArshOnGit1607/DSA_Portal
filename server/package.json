@@ -6,17 +6,24 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/db/migrate.ts up",
+    "db:migrate:down": "tsx src/db/migrate.ts down",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:reset": "tsx src/db/migrate.ts reset && tsx src/db/seed.ts",
+    "db:import-legacy": "tsx src/db/import-legacy.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.0",
     "@fastify/jwt": "^8.0.0",
     "fastify": "^4.26.0",
+    "pg": "^8.11.3",
     "@dsa-portal/core": "*"
   },
   "devDependencies": {
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
-    "@types/node": "^20.11.0"
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.2"
   }
 }
