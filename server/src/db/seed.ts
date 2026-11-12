@@ -1,4 +1,4 @@
-import { validateProblem, type Problem } from '@dsa-portal/core';
+import { validateProblem } from '@dsa-portal/core';
 import { pool, closePool } from './pool';
 import { PostgresProblemRepository } from './repositories/problem.repository';
 import { PostgresUserRepository } from './repositories/user.repository';
