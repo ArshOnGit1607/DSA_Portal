@@ -1,7 +1,8 @@
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { User } from '@dsa-portal/core';
 import { decodeCursor, encodeCursor, HttpError, notFound } from '../../lib/http';
+import { authorize } from '../auth/hooks';
+import type { AuthStore } from '../auth/store';
 import { IdParams, PageQuery } from '../problems/routes';
 import type { FailedJob, SubmissionQueue } from './queue';
 
@@ -18,17 +19,11 @@ const toApiFailedJob = (j: FailedJob) => ({
 /** Dead-letter list for admins: see why jobs failed and put them back on the queue. */
 export const queueAdminRoutes: FastifyPluginAsync<{
   queue: SubmissionQueue;
-  users: { findById(id: string): Promise<User | null> };
-}> = async (app, { queue, users }) => {
-  // The access token only carries `sub`, so the role is read fresh: a demoted admin loses access at once.
-  const requireAdmin = async (req: FastifyRequest) => {
-    await app.authenticate(req);
-    if ((await users.findById(req.user.sub))?.role !== 'admin') {
-      throw new HttpError(403, 'FORBIDDEN', 'Admin role required');
-    }
-  };
+  auth: AuthStore;
+}> = async (app, { queue, auth }) => {
+  const guard = { onRequest: app.authenticate, preHandler: authorize(auth, 'admin') };
 
-  app.get('/admin/queue/failed', { onRequest: requireAdmin }, async (req) => {
+  app.get('/admin/queue/failed', guard, async (req) => {
     const q = z.object(PageQuery).parse(req.query);
     const cursor = decodeCursor(q.cursor);
     let after: { failedAt: string; id: string } | undefined;
@@ -46,7 +41,7 @@ export const queueAdminRoutes: FastifyPluginAsync<{
     };
   });
 
-  app.post('/admin/queue/failed/:id/requeue', { onRequest: requireAdmin }, async (req, reply) => {
+  app.post('/admin/queue/failed/:id/requeue', guard, async (req, reply) => {
     const { id } = IdParams.parse(req.params);
     if (!(await queue.requeue(id))) throw notFound('Failed submission');
     return reply.code(202).send({ submissionId: id, status: 'queued' });

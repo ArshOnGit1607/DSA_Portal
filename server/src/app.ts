@@ -4,7 +4,7 @@ import type { FastifyRequest, FastifyServerOptions } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import { ZodError } from 'zod';
-import type { ProblemRepository, SubmissionRepository, User } from '@dsa-portal/core';
+import type { ProblemRepository, SubmissionRepository } from '@dsa-portal/core';
 import { HttpError } from './lib/http';
 import { InMemoryProblemRepository } from './modules/problems/in-memory-problem.repository';
 import { InMemorySubmissionRepository } from './modules/submissions/in-memory-submission.repository';
@@ -14,7 +14,14 @@ import { solutionRoutes } from './modules/solutions/routes';
 import { submissionRoutes, type Backpressure } from './modules/submissions/routes';
 import { queueAdminRoutes } from './modules/submissions/admin-routes';
 import { InMemorySubmissionQueue, type SubmissionQueue } from './modules/submissions/queue';
-import { InMemoryAuthStore } from './modules/auth/store';
+import { InMemoryAuthStore, type AuthStore } from './modules/auth/store';
+import { authenticate } from './modules/auth/hooks';
+import { authRoutes } from './modules/auth/routes';
+import type { LoginThrottle } from './modules/auth/throttle';
+import { adminRoutes } from './modules/admin/routes';
+import { statsRoutes } from './modules/stats/routes';
+import { InMemoryStatsRepository } from './modules/stats/in-memory-stats.repository';
+import type { StatsStore } from './modules/stats/stats.service';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -34,8 +41,12 @@ export interface AppOptions {
   submissions?: SubmissionRepository;
   /** Queue depth + dead-letter actions. Defaults to one over the in-memory submissions. */
   queue?: SubmissionQueue;
-  /** Role lookup for admin routes (Person 3's AuthStore fits). */
-  users?: { findById(id: string): Promise<User | null> };
+  /** Users, sessions and roles (Person 3). */
+  auth?: AuthStore;
+  stats?: StatsStore;
+  /** Admin DELETE /admin/problems; the server passes unpublishProblem until ProblemRepository has delete (CR-015). */
+  deleteProblem?: (id: string) => Promise<boolean>;
+  throttle?: LoginThrottle;
   backpressure?: Partial<Backpressure>;
 }
 
@@ -56,11 +67,15 @@ export function buildApp(opts: AppOptions = {}) {
   if (!opts.queue && !(submissions instanceof InMemorySubmissionRepository)) {
     throw new Error('Pass a queue (PostgresSubmissionQueue) together with a non-memory submission repository');
   }
+  const problems = opts.problems ?? new InMemoryProblemRepository();
   const deps = {
-    problems: opts.problems ?? new InMemoryProblemRepository(),
+    problems,
     submissions,
     queue: opts.queue ?? new InMemorySubmissionQueue(submissions as InMemorySubmissionRepository),
-    users: opts.users ?? new InMemoryAuthStore(),
+    auth: opts.auth ?? new InMemoryAuthStore(),
+    stats: opts.stats ?? new InMemoryStatsRepository(problems, submissions),
+    deleteProblem: opts.deleteProblem ?? (async () => false),
+    throttle: opts.throttle,
     backpressure: {
       maxWaiting: Number(process.env.QUEUE_MAX_WAITING) || 500,
       retryAfterS: Number(process.env.QUEUE_RETRY_AFTER_S) || 10,
@@ -71,18 +86,7 @@ export function buildApp(opts: AppOptions = {}) {
   app.register(fastifyCors);
   app.register(fastifyJwt, { secret: secret ?? 'dev-secret-change-me' });
 
-  // TEMP STUB (Day 4): plain JWT check until Person 3's auth middleware from
-  // /server/src/modules/auth is merged; then swap this decorator for theirs.
-  app.decorate('authenticate', async (req: FastifyRequest) => {
-    try {
-      await req.jwtVerify();
-    } catch {
-      throw new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid access token');
-    }
-    if (typeof req.user?.sub !== 'string' || !req.user.sub) {
-      throw new HttpError(401, 'UNAUTHORIZED', 'Token has no subject');
-    }
-  });
+  app.decorate('authenticate', authenticate);
 
   app.addHook('onSend', async (req, reply) => {
     reply.header('x-request-id', req.id);
@@ -132,6 +136,9 @@ export function buildApp(opts: AppOptions = {}) {
       await api.register(solutionRoutes, deps);
       await api.register(submissionRoutes, deps);
       await api.register(queueAdminRoutes, deps);
+      await api.register(authRoutes, deps);
+      await api.register(adminRoutes, deps);
+      await api.register(statsRoutes, deps);
     },
     { prefix: '/api/v1' }
   );

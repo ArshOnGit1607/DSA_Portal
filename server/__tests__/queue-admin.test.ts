@@ -1,15 +1,16 @@
 import { randomUUID } from 'crypto';
 import { buildApp } from '../src/app';
+import type { AuthStore } from '../src/modules/auth/store';
 import { InMemorySubmissionRepository } from '../src/modules/submissions/in-memory-submission.repository';
 
 const ADMIN = randomUUID();
-const users = {
-  findById: async (id: string) => (id === ADMIN ? { id, username: 'root', email: 'r@x.dev', role: 'admin' as const } : null),
+const auth = {
+  findById: async (id: string) => ({ id, username: 'u', email: 'u@x.dev', role: id === ADMIN ? ('admin' as const) : ('user' as const), createdAt: new Date() }),
 };
 
 describe('Day 6: backpressure and the dead-letter admin API', () => {
   const submissions = new InMemorySubmissionRepository();
-  const app = buildApp({ logger: false, submissions, users, backpressure: { maxWaiting: 2, retryAfterS: 7 } });
+  const app = buildApp({ logger: false, submissions, auth: auth as unknown as AuthStore, backpressure: { maxWaiting: 2, retryAfterS: 7 } });
   const bearer = (sub: string) => ({ authorization: `Bearer ${app.jwt.sign({ sub })}` });
   const user = randomUUID();
   const post = (headers: Record<string, string> = {}) =>

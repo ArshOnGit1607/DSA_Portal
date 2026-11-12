@@ -3,12 +3,16 @@ import { closePool } from './db/pool';
 import { PostgresProblemRepository, PostgresSubmissionRepository } from './db/repositories';
 import { PostgresAuthStore } from './modules/auth/store';
 import { PostgresSubmissionQueue } from './modules/submissions/queue';
+import { PostgresStatsStore } from './modules/stats/stats.service';
+import { unpublishProblem } from './modules/admin/routes';
 
 const app = buildApp({
   problems: new PostgresProblemRepository(),
   submissions: new PostgresSubmissionRepository(),
   queue: new PostgresSubmissionQueue(),
-  users: new PostgresAuthStore(),
+  auth: new PostgresAuthStore(),
+  stats: new PostgresStatsStore(),
+  deleteProblem: unpublishProblem,
 });
 app.addHook('onClose', closePool);
 

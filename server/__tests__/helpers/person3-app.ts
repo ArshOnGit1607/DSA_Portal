@@ -9,11 +9,8 @@ import { statsServiceStub } from '@dsa-portal/workers';
 import { buildApp } from '../../src/app';
 import { InMemoryProblemRepository } from '../../src/modules/problems/in-memory-problem.repository';
 import { InMemorySubmissionRepository } from '../../src/modules/submissions/in-memory-submission.repository';
-import { authRoutes } from '../../src/modules/auth/routes';
 import { InMemoryAuthStore, type AuthStore } from '../../src/modules/auth/store';
 import { LoginThrottle } from '../../src/modules/auth/throttle';
-import { adminRoutes } from '../../src/modules/admin/routes';
-import { statsRoutes } from '../../src/modules/stats/routes';
 import { InMemoryStatsRepository } from '../../src/modules/stats/in-memory-stats.repository';
 import type { StatsStore } from '../../src/modules/stats/stats.service';
 
@@ -39,7 +36,7 @@ export function assertMatchesSpec(method: string, url: string, status: number, b
 }
 
 /**
- * The server app with Person 3's modules registered the way CR-010 asks app.ts to do it.
+ * The real server app (Person 3's modules are wired in app.ts since CR-010) plus a spec-checking `call`.
  * Pass Postgres stores to run the same routes against a real database.
  */
 export function buildPerson3App(
@@ -49,15 +46,7 @@ export function buildPerson3App(
   const submissions = opts.submissions ?? new InMemorySubmissionRepository();
   const auth = opts.auth ?? new InMemoryAuthStore();
   const stats = opts.stats ?? new InMemoryStatsRepository(problems, submissions);
-  const app = buildApp({ logger: false, problems, submissions });
-  app.register(
-    async (api) => {
-      await api.register(authRoutes, { auth, throttle: opts.throttle });
-      await api.register(adminRoutes, { auth, problems, deleteProblem: opts.deleteProblem ?? (async () => false) });
-      await api.register(statsRoutes, { stats });
-    },
-    { prefix: '/api/v1' }
-  );
+  const app = buildApp({ logger: false, problems, submissions, auth, stats, throttle: opts.throttle, deleteProblem: opts.deleteProblem });
 
   type Opts = { payload?: object; headers?: Record<string, string>; query?: Record<string, string> };
   /** inject + spec check. `specPath` is the documented path, `url` overrides the real one. */

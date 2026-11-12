@@ -243,6 +243,18 @@ components:
           format: date-time
           nullable: true
 
+    DifficultyStat:
+      type: object
+      required: [difficulty, attempted, solved]
+      properties:
+        difficulty:
+          type: string
+          enum: [Easy, Medium, Hard]
+        attempted:
+          type: integer
+        solved:
+          type: integer
+
     # ---- Leaderboard ----
     LeaderboardEntry:
       type: object
@@ -437,6 +449,16 @@ paths:
                 $ref: '#/components/schemas/TokenPair'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Too many failed logins from this IP or for this account; retry after Retry-After seconds
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/auth/refresh:
     post:
@@ -816,6 +838,7 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/StatSummary'
                   - type: object
+                    required: [streak, topics, difficulties]
                     properties:
                       streak:
                         $ref: '#/components/schemas/StreakStat'
@@ -823,6 +846,10 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/TopicStat'
+                      difficulties:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DifficultyStat'
 
   /api/v1/stats/me/topics:
     get:
@@ -844,6 +871,33 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/TopicStat'
+
+  /api/v1/stats/me/streak:
+    get:
+      tags: [stats]
+      operationId: statsMeStreak
+      summary: Current user's streak plus the days it is built from (streak calendar)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Streak and solve days
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StreakStat'
+                  - type: object
+                    required: [days]
+                    properties:
+                      days:
+                        type: array
+                        description: UTC dates (YYYY-MM-DD), ascending, on which the user first solved a problem
+                        items:
+                          type: string
+                          format: date
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ===========================================================================
   # Leaderboard
