@@ -244,3 +244,23 @@ describe('sandbox — failure labels', () => {
     expect(big.perTest[0].error).toBe('Output too large');
   });
 });
+
+describe('nodePath / extraEnv (CR-018: desktop runs the child with its own binary)', () => {
+  it('runs the child with the given binary and env', async () => {
+    const result = await submitCodeSandboxAsync(twoSum, correctCode, { nodePath: process.execPath, extraEnv: { ELECTRON_RUN_AS_NODE: '1' } });
+    expect(result.status).toBe('passed');
+  });
+
+  it('really uses nodePath: a missing binary fails every test instead of falling back to node', () => {
+    const result = submitCodeSandbox(twoSum, correctCode, { nodePath: '/nonexistent/node' });
+    expect(result.status).not.toBe('passed');
+    expect(result.perTest.every((t) => !t.passed)).toBe(true);
+  });
+
+  it('cannot override the memory limit through extraEnv', async () => {
+    const hog = 'function solve() { const a = []; while (true) a.push(new Array(1e6).fill(1)); }';
+    const result = await submitCodeSandboxAsync(twoSum, hog, { extraEnv: { NODE_OPTIONS: '--max-old-space-size=4096' }, perTestTimeoutMs: 5000 });
+    // With the override honoured it would run until the 5 s timeout; the 64 MB cap kills it first.
+    expect(result.status).toBe('error');
+  }, 60000);
+});

@@ -15,6 +15,10 @@ export interface SandboxOptions {
   totalTimeoutMs?: number;
   memoryLimitMb?: number;
   outputCap?: number;
+  /** Binary that runs the child. Desktop passes process.execPath + ELECTRON_RUN_AS_NODE so no Node install is needed (CR-018). */
+  nodePath?: string;
+  /** Extra env for the child. PATH and NODE_OPTIONS (the memory limit) cannot be overridden. */
+  extraEnv?: Record<string, string>;
 }
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +28,8 @@ const DEFAULTS: Required<SandboxOptions> = {
   totalTimeoutMs: 30000,
   memoryLimitMb: 64,
   outputCap: 50000,
+  nodePath: 'node',
+  extraEnv: {},
 };
 
 /**
@@ -58,6 +64,7 @@ function childCommand(codePath: string, inputPath: string, options: Required<San
     maxBuffer: options.outputCap + 4096,
     // Minimal env: never leak server secrets (JWT_SECRET, DATABASE_URL) or Jest IPC vars to untrusted code.
     env: {
+      ...options.extraEnv,
       PATH: process.env.PATH,
       NODE_OPTIONS: `--max-old-space-size=${options.memoryLimitMb}`,
     },
@@ -109,7 +116,7 @@ function runSingleTest(
   const started = Date.now();
   try {
     // Drop child stderr so untrusted code (or an OOM crash dump) cannot flood the host's logs.
-    const stdout = execFileSync('node', args, { ...execOptions, stdio: ['ignore', 'pipe', 'ignore'] });
+    const stdout = execFileSync(options.nodePath, args, { ...execOptions, stdio: ['ignore', 'pipe', 'ignore'] });
     return toPerTestResult(tc, testId, options, stdout);
   } catch (err) {
     return toPerTestResult(tc, testId, options, undefined, err, Date.now() - started);
@@ -131,7 +138,7 @@ async function runSingleTestAsync(
   const started = Date.now();
   try {
     // execFile buffers stderr in memory (capped by maxBuffer); it never reaches the host's logs.
-    const { stdout } = await execFileAsync('node', args, execOptions);
+    const { stdout } = await execFileAsync(options.nodePath, args, execOptions);
     return toPerTestResult(tc, testId, options, stdout);
   } catch (err) {
     return toPerTestResult(tc, testId, options, undefined, err, Date.now() - started);
