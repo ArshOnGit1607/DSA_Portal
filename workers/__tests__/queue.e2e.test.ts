@@ -1,5 +1,6 @@
 /**
- * Day 5 end-to-end: API (in this process) → PostgreSQL queue → worker (a SEPARATE process) → result.
+ * Day 5/6 end-to-end: API (in this process) → PostgreSQL queue → worker (a SEPARATE process) → result,
+ * plus retries, the dead-letter list, metrics and the SIGKILL chaos script.
  * Needs a migrated database:  TEST_DATABASE_URL=postgresql://postgres@localhost:5432/dsa_portal_test npx jest workers
  */
 import { execSync, spawn, type ChildProcess } from 'child_process';
@@ -28,6 +29,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const { migrateUp } = await import('../../server/src/db/migrate');
     const repos = await import('../../server/src/db/repositories');
     const { buildApp } = await import('../../server/src/app');
+    const { PostgresSubmissionQueue } = await import('../../server/src/modules/submissions/queue');
     const { PROBLEMS } = await import('@dsa-portal/core');
     ({ pool, closePool } = db);
 
@@ -40,7 +42,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const problems = new repos.PostgresProblemRepository();
     if (!(await problems.findById('two-sum'))) await problems.save(PROBLEMS.find((p) => p.id === 'two-sum')!);
 
-    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository() });
+    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue() });
     await app.ready();
     auth = { authorization: `Bearer ${app.jwt.sign({ sub: USER_ID })}` };
 
@@ -136,4 +138,86 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const s = (await app.inject({ url: `/api/v1/submissions/${res.json().submissionId}`, headers: auth })).json();
     expect(s).toMatchObject({ status: 'judged', passed: 2, total: 5 });
   }, 20000);
+
+  // Day 6. In-process workers from here on; the separate worker process was stopped above.
+  const quietWorker = async (problems: import('@dsa-portal/core').ProblemRepository, queue = {}) => {
+    const repos = await import('../../server/src/db/repositories');
+    const { startWorker } = await import('../src/pg-queue');
+    return startWorker({
+      pool,
+      concurrency: 1,
+      pollMs: 50,
+      queue: { maxAttempts: 2, backoffMs: 50, leaseMs: 5000, ...queue },
+      log: { info() {}, error() {} },
+      deps: { problems, submissions: new repos.PostgresSubmissionRepository(), stats: { onSubmissionJudged: async () => {} } },
+    });
+  };
+  const row = async (id: string) =>
+    (await pool.query(`SELECT status::text, attempts, last_error, run_after > created_at AS backed_off FROM submissions WHERE id = $1`, [id])).rows[0];
+
+  it('retries an infrastructure error with backoff, then dead-letters it; an admin can list and requeue it', async () => {
+    const repos = await import('../../server/src/db/repositories');
+    const { PostgresSubmissionQueue } = await import('../../server/src/modules/submissions/queue');
+    const real = new repos.PostgresProblemRepository();
+    const broken = { ...real, findById: async () => { throw new Error('problem store unavailable'); } } as typeof real;
+
+    const id = (await submit(TWO_SUM_OK)).json().submissionId;
+    const w = await quietWorker(broken);
+    for (let i = 0; i < 100 && (await row(id)).status !== 'failed'; i++) await sleep(50);
+    await w.stop();
+    expect(await row(id)).toMatchObject({ status: 'failed', attempts: 2, last_error: 'problem store unavailable', backed_off: true });
+    expect(w.metrics.jobs).toMatchObject({ retried: 1, dead: 1 });
+
+    const queue = new PostgresSubmissionQueue();
+    expect((await queue.listFailed(100)).map((j) => j.id)).toContain(id);
+    // Keyset paging one row at a time visits every failed row exactly once.
+    const all = (await queue.listFailed(1000)).map((j) => j.id);
+    const paged: string[] = [];
+    for (let page = await queue.listFailed(1); page.length; ) {
+      paged.push(page[0].id);
+      page = await queue.listFailed(1, { failedAt: page[0].failedAt!.toISOString(), id: page[0].id });
+    }
+    expect(paged).toEqual(all);
+    expect(await queue.requeue(id)).toBe(true);
+    expect(await queue.requeue(id)).toBe(false); // not failed any more
+    const healthy = await quietWorker(real);
+    const done = await waitForResult(id);
+    await healthy.stop();
+    expect(done).toMatchObject({ status: 'judged', passed: 5, total: 5 });
+  }, 30000);
+
+  it('backpressure counts real queued rows', async () => {
+    const { PostgresSubmissionQueue } = await import('../../server/src/modules/submissions/queue');
+    const before = await new PostgresSubmissionQueue().waitingCount();
+    await submit(TWO_SUM_OK);
+    expect(await new PostgresSubmissionQueue().waitingCount()).toBe(before + 1);
+    const repos = await import('../../server/src/db/repositories');
+    const w = await quietWorker(new repos.PostgresProblemRepository());
+    for (let i = 0; i < 100 && (await new PostgresSubmissionQueue().waitingCount()) > 0; i++) await sleep(50);
+    await w.stop();
+  }, 20000);
+
+  it('exposes real queue numbers in Prometheus format', async () => {
+    const { QueueMetrics } = await import('../src/metrics');
+    const m = new QueueMetrics();
+    m.observe(0.3);
+    m.jobs.judged++;
+    const text = await m.render(pool);
+    const failed = (await pool.query(`SELECT count(*)::int AS n FROM submissions WHERE status = 'failed'`)).rows[0].n;
+    expect(text).toContain(`dsa_queue_failed ${failed}`);
+    expect(text).toMatch(/dsa_queue_waiting \d+/);
+    expect(text).toContain('dsa_queue_jobs_total{outcome="judged"} 1');
+    expect(text).toContain('dsa_queue_job_duration_seconds_bucket{le="0.25"} 0');
+    expect(text).toContain('dsa_queue_job_duration_seconds_bucket{le="0.5"} 1');
+    expect(text).toContain('dsa_queue_job_duration_seconds_count 1');
+  });
+
+  it('chaos: a worker SIGKILLed mid-job is recovered and the job is judged exactly once', () => {
+    const out = execSync('npx tsx workers/scripts/chaos.ts', {
+      cwd: ROOT,
+      env: { ...process.env, DATABASE_URL: DB_URL },
+      encoding: 'utf8',
+    });
+    expect(out).toContain('[chaos] PASSED');
+  }, 60000);
 });
