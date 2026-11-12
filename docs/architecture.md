@@ -65,11 +65,16 @@ sequenceDiagram
     API->>PG: INSERT submission (status: queued)
     PG-->>W: NOTIFY submission_queued (trigger, migration 002)
     API-->>C: 202 {submissionId, status: queued}
-    W->>PG: UPDATE … SET status = running WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)
+    W->>PG: UPDATE … SET status = running, attempts+1, lock_token, lease WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)
     W->>PG: load submission + problem (repositories)
     W->>S: run code against each test case (async, per-test timeout)
+    W->>PG: heartbeat every lease/3 (renew locked_until)
     S-->>W: ExecutionResult {status, perTest[]}
+    W->>PG: still my lock_token? (else drop the result: another worker took over)
     W->>PG: save (status: judged, results, judged_at) + upsert user_problem_stats
+    alt infrastructure error
+        W->>PG: queued again with backoff, or failed (dead letter) after max attempts
+    end
     W->>W: stats service hook (Person 3, stubbed)
     loop until judged/failed
         C->>API: GET /api/v1/submissions/:id
@@ -78,6 +83,8 @@ sequenceDiagram
     end
     Note over C,API: Day 7 adds Socket.IO push (submission:finished) so clients can stop polling.
 ```
+
+**Day 6 reliability:** retries with exponential backoff, a dead-letter list (`status = failed`, admin requeue), leases so a killed worker's job is re-claimed, 429 backpressure and Prometheus metrics. Full design and failure table: [`queue-design.md`](./queue-design.md).
 
 **Why this is safe with several workers:** `FOR UPDATE SKIP LOCKED` hands each queued row to exactly one worker; `judgeSubmission` ignores rows that are already judged; the unique index `(user_id, idempotency_key)` stops duplicate POSTs even when retries race. If a NOTIFY is missed, workers still poll every `WORKER_POLL_MS`.
 

@@ -114,3 +114,20 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Reason:** the mobile (Expo) client has no reliable cookie jar; login already returns `refreshToken` in the body, but today it can only be sent back as a cookie. Not implemented until approved.
 - **Status:** pending
 - **Approved by:** —
+
+## CR-014
+- **Proposed by:** Person 1 (Day 6), **for Person 2** (owner of `/server/src/db`) and **for Person 3** (API additions)
+- **Changes already made (approved by Person 1's user), so the queue can retry, recover stalled jobs and dead-letter:**
+  1. New migration `server/src/db/migrations/003_queue_reliability` (up + down, checked both ways): `submissions.attempts`, `run_after`, `lock_token`, `locked_until`, `last_error`; partial indexes on `running` rows (lease) and `failed` rows (dead-letter list). The `submissions_notify_queued` trigger now also fires on `UPDATE OF status` to `queued` (retries, requeue). No existing column changed. `PostgresSubmissionRepository` is unchanged and ignores the new columns.
+  2. API additions in `/docs/openapi.yaml` (no existing behaviour changed): `POST /submissions` may return `429 QUEUE_FULL` with `Retry-After`; the `409 IDEMPOTENCY_KEY_REUSED` from CR-006 is now documented; new admin endpoints `GET /admin/queue/failed` and `POST /admin/queue/failed/{id}/requeue` (schema `FailedJob`). They live in `server/src/modules/submissions/admin-routes.ts` because they are queue operations, not problem admin (Person 3's `/admin` module is untouched). The role is read through Person 3's `AuthStore.findById`.
+- **Please note (Person 2):** two migrations now share the number `002` (`002_submission_queue`, `002_sync_tables`). Both apply because `_migrations` stores the full name, but please renumber new ones from `004`.
+- **Status:** done, needs Person 2's review
+- **Approved by:** —
+
+## CR-015
+- **Proposed by:** Person 1 (Day 6), **for Person 2**
+- **Problem:** `main` did not build after PR #7/#8. `core/src/storage/repositories/sqlite-submission.repository.ts` uses `result.passed/total/results`, which don't exist on core's `ExecutionResult` (same issue CR-007 fixed for PostgreSQL), and lacks `findByIdempotencyKey`. `core/src/sync/__tests__/hlc.test.ts:56` also fails to type-check. `server/src/db/repositories/audit.repository.ts` imported `AuditRepository`/`AuditEntry` from `@dsa-portal/core`, which did not export them.
+- **Changes already made (Person 1's files only):** `core/src/index.ts` now re-exports the `AuditEntry` and `AuditRepository` types (type-only, so SQLite never loads in the server). `core/tsconfig.json` excludes `src/storage` and `src/sync` from core's build (nothing imports them yet), so `npm run build` is green again.
+- **Proposed change (Person 2):** fix the SQLite submission repository to the `{ status, perTest }` shape, add `findByIdempotencyKey`, fix the HLC test, then remove the two excludes in `core/tsconfig.json`. Also, `npx eslint` reports an unused `PoolClient` import in `submission.repository.ts:1` (the only lint error in the repo).
+- **Status:** pending
+- **Approved by:** —

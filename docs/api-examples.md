@@ -1,4 +1,4 @@
-# API examples (Days 4–5)
+# API examples (Days 4–6)
 
 curl examples for every endpoint implemented so far. Contract: `/docs/openapi.yaml`.
 Auth, stats, leaderboard, daily-challenge, admin and sync endpoints come later (Persons 2/3, Days 5–7).
@@ -92,6 +92,34 @@ curl -s $B/submissions/93b43641-... -H "$H"
 
 # My submissions, newest first, optional problemId filter, keyset pagination
 curl -s "$B/submissions?limit=5&problemId=two-sum" -H "$H"
+```
+
+## Queue: backpressure and dead-letter list (Day 6)
+
+```bash
+# When QUEUE_MAX_WAITING submissions are already waiting, new submissions are refused for a while
+curl -si -X POST $B/submissions -H "$H" -H 'Content-Type: application/json' -d '{"problemId":"two-sum","code":"..."}'
+# HTTP/1.1 429 Too Many Requests
+# retry-after: 10
+# {"error":"QUEUE_FULL","message":"Too many submissions waiting; retry in 10s","statusCode":429,...}
+
+# Admin only (403 FORBIDDEN otherwise): submissions that failed every retry, newest first, keyset pagination
+# Token for the seeded admin user (role is read from the users table on every request)
+AH="Authorization: Bearer $(npm run -s dev:token -w server -- 00000000-0000-0000-0000-000000000001)"
+curl -s "$B/admin/queue/failed?limit=20" -H "$AH"
+# {"data":[{"id":"5b1c...","problemId":"two-sum","userId":"...","attempts":3,"lastError":"connect ECONNREFUSED ...","createdAt":"...","failedAt":"..."}],"nextCursor":null}
+
+# Put one back on the queue with a fresh retry budget (404 if it is not in the dead-letter list)
+curl -s -X POST $B/admin/queue/failed/5b1c.../requeue -H "$AH"
+# {"submissionId":"5b1c...","status":"queued"}
+
+# Worker metrics (Prometheus text format; set WORKER_METRICS_PORT on the worker)
+curl -s localhost:9464/metrics
+# dsa_queue_waiting 0
+# dsa_queue_active 1
+# dsa_queue_failed 2
+# dsa_queue_jobs_total{outcome="judged"} 41
+# dsa_queue_job_duration_seconds_bucket{le="1"} 38 ...
 ```
 
 ## Common errors
