@@ -35,7 +35,7 @@ interface Case {
   route: string; // "METHOD /registered/:url"
   url: string;
   status: number;
-  token?: 'A' | 'B';
+  token?: 'A' | 'B' | 'ADMIN';
   body?: object;
   headers?: Record<string, string>;
 }
@@ -46,18 +46,24 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
     submissions: new InMemorySubmissionRepository(),
     stats: statsServiceStub,
   };
-  const app = buildApp({ logger: false, problems: deps.problems, submissions: deps.submissions });
+  const admin = randomUUID();
+  const users = {
+    findById: async (id: string) => (id === admin ? { id, username: 'root', email: 'r@x.dev', role: 'admin' as const } : null),
+  };
+  const app = buildApp({ logger: false, problems: deps.problems, submissions: deps.submissions, users });
   const registered: string[] = [];
   app.addHook('onRoute', (r) => {
     [r.method].flat().filter((m) => m !== 'HEAD').forEach((m) => registered.push(`${m} ${r.url}`));
   });
-  const tokens: Record<'A' | 'B', string> = { A: '', B: '' };
+  const tokens: Record<'A' | 'B' | 'ADMIN', string> = { A: '', B: '', ADMIN: '' };
   let submissionId = '';
+  let failedId = '';
 
   beforeAll(async () => {
     await app.ready();
     tokens.A = app.jwt.sign({ sub: randomUUID() });
     tokens.B = app.jwt.sign({ sub: randomUUID() });
+    tokens.ADMIN = app.jwt.sign({ sub: admin });
     const solve =
       'function solve({ nums, target }) { const m = new Map(); for (let i = 0; i < nums.length; i++) { if (m.has(target - nums[i])) return [m.get(target - nums[i]), i]; m.set(nums[i], i); } }';
     const res = await app.inject({
@@ -68,6 +74,8 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
     });
     submissionId = res.json().submissionId;
     await judgeSubmission(submissionId, deps); // the worker's job: unlocks A's solution
+    failedId = randomUUID(); // a dead-lettered job for the admin routes
+    await deps.submissions.save({ id: failedId, problemId: 'two-sum', userId: admin, code: 'x', status: 'failed', createdAt: new Date(), judgedAt: new Date() });
   });
   afterAll(() => app.close());
 
@@ -95,6 +103,14 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
     { route: 'GET /api/v1/submissions/:id', url: `/api/v1/submissions/${submissionId}`, status: 200, token: 'A' },
     { route: 'GET /api/v1/submissions/:id', url: `/api/v1/submissions/${submissionId}`, status: 404, token: 'B' },
     { route: 'GET /api/v1/submissions/:id', url: `/api/v1/submissions/${submissionId}`, status: 401 },
+    { route: 'GET /api/v1/admin/queue/failed', url: '/api/v1/admin/queue/failed?limit=5', status: 200, token: 'ADMIN' },
+    { route: 'GET /api/v1/admin/queue/failed', url: '/api/v1/admin/queue/failed?cursor=bm9wZQ', status: 400, token: 'ADMIN' },
+    { route: 'GET /api/v1/admin/queue/failed', url: '/api/v1/admin/queue/failed', status: 403, token: 'A' },
+    { route: 'GET /api/v1/admin/queue/failed', url: '/api/v1/admin/queue/failed', status: 401 },
+    { route: 'POST /api/v1/admin/queue/failed/:id/requeue', url: `/api/v1/admin/queue/failed/${failedId}/requeue`, status: 202, token: 'ADMIN' },
+    { route: 'POST /api/v1/admin/queue/failed/:id/requeue', url: `/api/v1/admin/queue/failed/${failedId}/requeue`, status: 404, token: 'ADMIN' },
+    { route: 'POST /api/v1/admin/queue/failed/:id/requeue', url: `/api/v1/admin/queue/failed/${failedId}/requeue`, status: 403, token: 'A' },
+    { route: 'POST /api/v1/admin/queue/failed/:id/requeue', url: `/api/v1/admin/queue/failed/${failedId}/requeue`, status: 401 },
   ];
 
   it('every registered route is in the spec and has a contract case', () => {

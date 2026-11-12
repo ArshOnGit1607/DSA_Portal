@@ -1,10 +1,14 @@
 import { buildApp } from './app';
 import { closePool } from './db/pool';
 import { PostgresProblemRepository, PostgresSubmissionRepository } from './db/repositories';
+import { PostgresAuthStore } from './modules/auth/store';
+import { PostgresSubmissionQueue } from './modules/submissions/queue';
 
 const app = buildApp({
   problems: new PostgresProblemRepository(),
   submissions: new PostgresSubmissionRepository(),
+  queue: new PostgresSubmissionQueue(),
+  users: new PostgresAuthStore(),
 });
 app.addHook('onClose', closePool);
 

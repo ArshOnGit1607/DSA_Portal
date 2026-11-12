@@ -16,6 +16,10 @@ export class InMemorySubmissionRepository implements SubmissionRepository {
     return [...this.submissions.values()].filter((s) => s.userId === userId);
   }
 
+  all() {
+    return [...this.submissions.values()];
+  }
+
   async findByIdempotencyKey(userId: string, key: string) {
     return (await this.findByUser(userId)).find((s) => s.idempotencyKey === key) ?? null;
   }

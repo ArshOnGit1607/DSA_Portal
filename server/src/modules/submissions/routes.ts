@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { ProblemRepository, Submission, SubmissionRepository } from '@dsa-portal/core';
 import { decodeCursor, HttpError, keysetPage, notFound } from '../../lib/http';
 import { findProblemOr404, IdParams, PageQuery } from '../problems/routes';
+import type { SubmissionQueue } from './queue';
 
 const SubmissionCreate = z.object({
   problemId: z.string().min(1),
@@ -35,10 +36,18 @@ export function toApiSubmission(s: Submission) {
 // Newest first; id breaks ties so the cursor key is unique.
 const sortKey = (s: Submission) => `${s.createdAt.toISOString()}|${s.id}`;
 
+export interface Backpressure {
+  /** 429 once this many submissions are waiting. */
+  maxWaiting: number;
+  retryAfterS: number;
+}
+
 export const submissionRoutes: FastifyPluginAsync<{
   problems: ProblemRepository;
   submissions: SubmissionRepository;
-}> = async (app, { problems, submissions }) => {
+  queue: SubmissionQueue;
+  backpressure: Backpressure;
+}> = async (app, { problems, submissions, queue, backpressure }) => {
   app.post('/submissions', { onRequest: app.authenticate }, async (req, reply) => {
     const body = SubmissionCreate.parse(req.body);
     const key = IdempotencyKey.parse(req.headers['idempotency-key']);
@@ -57,6 +66,12 @@ export const submissionRoutes: FastifyPluginAsync<{
 
     const replay = await findReplay();
     if (replay) return accepted(replay);
+
+    // Backpressure: refuse new work while the workers are far behind (a replay above adds none).
+    if ((await queue.waitingCount()) >= backpressure.maxWaiting) {
+      reply.header('retry-after', String(backpressure.retryAfterS));
+      throw new HttpError(429, 'QUEUE_FULL', `Too many submissions waiting; retry in ${backpressure.retryAfterS}s`);
+    }
 
     const problem = await findProblemOr404(problems, body.problemId);
     const submission: Submission = {

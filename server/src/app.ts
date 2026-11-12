@@ -4,14 +4,17 @@ import type { FastifyRequest, FastifyServerOptions } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import { ZodError } from 'zod';
-import type { ProblemRepository, SubmissionRepository } from '@dsa-portal/core';
+import type { ProblemRepository, SubmissionRepository, User } from '@dsa-portal/core';
 import { HttpError } from './lib/http';
 import { InMemoryProblemRepository } from './modules/problems/in-memory-problem.repository';
 import { InMemorySubmissionRepository } from './modules/submissions/in-memory-submission.repository';
 import { problemRoutes } from './modules/problems/routes';
 import { hintRoutes } from './modules/hints/routes';
 import { solutionRoutes } from './modules/solutions/routes';
-import { submissionRoutes } from './modules/submissions/routes';
+import { submissionRoutes, type Backpressure } from './modules/submissions/routes';
+import { queueAdminRoutes } from './modules/submissions/admin-routes';
+import { InMemorySubmissionQueue, type SubmissionQueue } from './modules/submissions/queue';
+import { InMemoryAuthStore } from './modules/auth/store';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -29,6 +32,11 @@ export interface AppOptions {
   logger?: FastifyServerOptions['logger'];
   problems?: ProblemRepository;
   submissions?: SubmissionRepository;
+  /** Queue depth + dead-letter actions. Defaults to one over the in-memory submissions. */
+  queue?: SubmissionQueue;
+  /** Role lookup for admin routes (Person 3's AuthStore fits). */
+  users?: { findById(id: string): Promise<User | null> };
+  backpressure?: Partial<Backpressure>;
 }
 
 export function buildApp(opts: AppOptions = {}) {
@@ -44,9 +52,20 @@ export function buildApp(opts: AppOptions = {}) {
     genReqId: () => randomUUID(),
   });
 
+  const submissions = opts.submissions ?? new InMemorySubmissionRepository();
+  if (!opts.queue && !(submissions instanceof InMemorySubmissionRepository)) {
+    throw new Error('Pass a queue (PostgresSubmissionQueue) together with a non-memory submission repository');
+  }
   const deps = {
     problems: opts.problems ?? new InMemoryProblemRepository(),
-    submissions: opts.submissions ?? new InMemorySubmissionRepository(),
+    submissions,
+    queue: opts.queue ?? new InMemorySubmissionQueue(submissions as InMemorySubmissionRepository),
+    users: opts.users ?? new InMemoryAuthStore(),
+    backpressure: {
+      maxWaiting: Number(process.env.QUEUE_MAX_WAITING) || 500,
+      retryAfterS: Number(process.env.QUEUE_RETRY_AFTER_S) || 10,
+      ...opts.backpressure,
+    },
   };
 
   app.register(fastifyCors);
@@ -112,6 +131,7 @@ export function buildApp(opts: AppOptions = {}) {
       await api.register(hintRoutes, deps);
       await api.register(solutionRoutes, deps);
       await api.register(submissionRoutes, deps);
+      await api.register(queueAdminRoutes, deps);
     },
     { prefix: '/api/v1' }
   );

@@ -300,6 +300,32 @@ components:
           items:
             $ref: '#/components/schemas/Submission'
 
+    # ---- Dead-letter list entry (Day 6) ----
+    FailedJob:
+      type: object
+      required: [id, problemId, userId, attempts, lastError, createdAt, failedAt]
+      properties:
+        id:
+          type: string
+        problemId:
+          type: string
+        userId:
+          type: string
+        attempts:
+          type: integer
+          description: Claims used, crashed or stalled runs included
+        lastError:
+          type: string
+          nullable: true
+          description: Why the last attempt failed
+        createdAt:
+          type: string
+          format: date-time
+        failedAt:
+          type: string
+          format: date-time
+          nullable: true
+
   ###############################################################################
   # Security schemes
   ###############################################################################
@@ -661,7 +687,7 @@ paths:
     post:
       tags: [submissions]
       operationId: submissionsCreate
-      summary: Submit code for judging (enqueues to BullMQ worker)
+      summary: Submit code for judging (enqueued for a worker process)
       security:
         - bearerAuth: []
       requestBody:
@@ -690,6 +716,22 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Idempotency-Key reused with a different body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Queue is full (backpressure); retry after the Retry-After header's seconds
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     get:
       tags: [submissions]
@@ -1041,6 +1083,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/queue/failed:
+    get:
+      tags: [admin]
+      operationId: adminListFailedSubmissions
+      summary: Dead-letter list - submissions that failed every retry (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Failed submissions, newest failure first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FailedJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/queue/failed/{id}/requeue:
+    post:
+      tags: [admin]
+      operationId: adminRequeueFailedSubmission
+      summary: Put a failed submission back on the queue with a fresh retry budget (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submissionId, status]
+                properties:
+                  submissionId:
+                    type: string
+                  status:
+                    type: string
+                    example: queued
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ===========================================================================
   # Sync (offline-first push/pull)
