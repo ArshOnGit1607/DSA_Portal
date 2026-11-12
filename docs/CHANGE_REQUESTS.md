@@ -71,3 +71,46 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Checked:** all 40 seed reference solutions (and the 3 core ones) pass their own tests; a fresh database migrates 001 + 002 once.
 - **Status:** done, needs Person 2's review
 - **Approved by:** —
+
+## CR-009
+- **Proposed by:** Person 3 (Day 1), **for Person 2**
+- **Field:** `UserRepository` (core) / `PostgresUserRepository`
+- **Proposed change:** none required now. FYI: core's `UserRepository` has no `findByEmail`, no password hash and no sessions, so auth uses its own `AuthStore` interface in `server/src/modules/auth/store.ts` (`InMemoryAuthStore` + `PostgresAuthStore`, which reads/writes the existing `users` and `sessions` tables; columns unchanged). If you prefer all SQL under `/server/src/db`, move `PostgresAuthStore` there and I'll import it.
+- **Status:** pending review
+- **Approved by:** —
+
+## CR-010
+- **Proposed by:** Person 3 (Day 1), **for Person 1** (owner of `server/src/app.ts`, `server/src/index.ts`, `/workers`)
+- **Field:** route wiring only, no endpoint change
+- **Proposed change:** in `app.ts`, add `auth?: AuthStore` and `stats?: StatsRepository` to `AppOptions`, default them to `new InMemoryAuthStore()` and `new InMemoryStatsRepository(deps.problems, deps.submissions)`, and inside the `/api/v1` plugin add
+  `await api.register(authRoutes, { auth: deps.auth });` and `await api.register(statsRoutes, { stats: deps.stats });`.
+  In `index.ts`, pass `auth: new PostgresAuthStore()` and `stats: new PostgresStatsRepository()`.
+  The existing `app.authenticate` stub can stay: access tokens are `{ sub: userId }`, signed with the same `app.jwt`, so no swap is needed.
+  Once wired, add the 5 auth + 2 stats routes to `openapi-contract.test.ts` (they already pass the same Ajv check in `server/__tests__/auth-stats.test.ts`).
+  `statsServiceStub` in `/workers` can stay a no-op: `PostgresSubmissionRepository.save()` already updates `user_problem_stats`.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-011
+- **Proposed by:** Person 3 (Day 1), **for Person 2**
+- **Field:** `StatsRepository.getUserStats()` return shape (core)
+- **Proposed change:** return `streak: { currentStreak, longestStreak, lastSolvedAt }` (the spec's `StreakStat`) instead of `streak: number`.
+- **Reason:** `GET /stats/me` must return a full `StreakStat` or nothing; with only the current streak it is left out of the response for now. Also: the streak is computed with the server's local timezone.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-012
+- **Proposed by:** Person 3 (Day 1), **for Person 2**
+- **Field:** `server/src/db/seed.ts` dev password hash
+- **Proposed change:** replace `$2b$10$wO3P6P6E0.0eK3.yF8iUSeVqjYh4c9qK2M5A1hU6d2Y/F4kH6v6y.` with `$2a$10$iBVruH6tb4eMv2wF.RPFT.XkkhjjPIQ/wpSU2mR.2VuHIDY8E1T2y`.
+- **Reason:** the current value is not a valid bcrypt hash of `password123` (`bcrypt.compare` returns false), so `admin@dsa.portal` / `student@dsa.portal` cannot log in.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-013
+- **Proposed by:** Person 3 (Day 1), **for Person 1** (openapi owner)
+- **Field:** `POST /api/v1/auth/refresh` and `/auth/logout`
+- **Proposed change:** also accept `{ "refreshToken": "..." }` in the JSON body when there is no `refresh_token` cookie.
+- **Reason:** the mobile (Expo) client has no reliable cookie jar; login already returns `refreshToken` in the body, but today it can only be sent back as a cookie. Not implemented until approved.
+- **Status:** pending
+- **Approved by:** —
