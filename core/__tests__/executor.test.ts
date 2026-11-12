@@ -31,20 +31,21 @@ function solve(input) {
   it('passes a correct submission', () => {
     const result = submitCode({ problem: twoSum, userCode: correctCode });
     expect(result.problemId).toBe('two-sum');
-    expect(result.passed).toBe(result.total);
-    expect(result.results.every((r) => r.passed)).toBe(true);
+    expect(result.status).toBe('passed');
+    expect(result.perTest.every((r) => r.passed)).toBe(true);
   });
 
   it('fails an incorrect submission', () => {
     const result = submitCode({ problem: twoSum, userCode: wrongCode });
-    expect(result.passed).toBeLessThan(result.total);
-    expect(result.results.some((r) => !r.passed)).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(result.perTest.some((r) => !r.passed)).toBe(true);
   });
 
   it('catches runtime errors gracefully', () => {
     const result = submitCode({ problem: twoSum, userCode: errorCode });
-    expect(result.passed).toBe(0);
-    expect(result.results.every((r) => !r.passed && typeof r.actual === 'string')).toBe(true);
+    expect(result.status).toBe('error');
+    expect(result.perTest.every((r) => !r.passed)).toBe(true);
+    expect(result.perTest.every((r) => typeof r.error === 'string')).toBe(true);
   });
 
   it('compares object results by deep equality', () => {
@@ -57,9 +58,21 @@ function solve(input) {
       ],
     };
     const result = submitCode({ problem: objProblem, userCode: objectCode });
-    expect(result.passed).toBe(1);
-    expect(result.total).toBe(2);
-    expect(result.results[0].passed).toBe(true);
-    expect(result.results[1].passed).toBe(false);
+    expect(result.status).toBe('failed');
+    expect(result.perTest.length).toBe(2);
+    expect(result.perTest[0].passed).toBe(true);
+    expect(result.perTest[1].passed).toBe(false);
+  });
+
+  it('returns the new result shape with perTest', () => {
+    const result = submitCode({ problem: twoSum, userCode: correctCode });
+    expect(result).toHaveProperty('status');
+    expect(result).toHaveProperty('perTest');
+    expect(Array.isArray(result.perTest)).toBe(true);
+    expect(result.perTest[0]).toHaveProperty('id');
+    expect(result.perTest[0]).toHaveProperty('passed');
+    expect(result.perTest[0]).toHaveProperty('expected');
+    expect(result.perTest[0]).toHaveProperty('actual');
+    expect(result.perTest[0]).toHaveProperty('runtimeMs');
   });
 });

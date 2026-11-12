@@ -23,7 +23,7 @@ export async function query<R extends QueryResultRow = any, I extends any[] = an
 ): Promise<QueryResult<R>> {
   const start = Date.now();
   try {
-    const res = await pool.query<R, I>(text, params);
+    const res = await pool.query<R>(text, params);
     const duration = Date.now() - start;
     if (process.env.NODE_ENV === 'development' && duration > 200) {
       console.warn(`[DB] Slow query (${duration}ms):`, text);
