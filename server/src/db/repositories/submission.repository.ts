@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import type {
   Submission,
   SubmissionRepository,

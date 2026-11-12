@@ -7,6 +7,7 @@ import type {
   Hint,
   Solution,
 } from '@dsa-portal/core';
+import type { PoolClient } from 'pg';
 import { pool, withTransaction } from '../pool';
 
 interface ProblemRow {
@@ -48,13 +49,19 @@ interface SolutionRow {
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class PostgresProblemRepository implements ProblemRepository {
+  constructor(private client?: PoolClient) {}
+
+  private get executor() {
+    return this.client || pool;
+  }
+
   async findById(idOrSlug: string): Promise<Problem | null> {
     const isUuid = UUID_REGEX.test(idOrSlug);
     const queryText = isUuid
       ? 'SELECT * FROM problems WHERE id = $1 LIMIT 1'
       : 'SELECT * FROM problems WHERE slug = $1 LIMIT 1';
 
-    const probRes = await pool.query<ProblemRow>(queryText, [idOrSlug]);
+    const probRes = await this.executor.query<ProblemRow>(queryText, [idOrSlug]);
     if (probRes.rows.length === 0) {
       return null;
     }
@@ -64,15 +71,15 @@ export class PostgresProblemRepository implements ProblemRepository {
 
     // Fetch related test_cases, hints, and solution in parallel
     const [tcRes, hintRes, solRes] = await Promise.all([
-      pool.query<TestCaseRow>(
+      this.executor.query<TestCaseRow>(
         'SELECT input, expected FROM test_cases WHERE problem_id = $1 ORDER BY sort_order ASC',
         [problemId]
       ),
-      pool.query<HintRow>(
+      this.executor.query<HintRow>(
         'SELECT level, content FROM hints WHERE problem_id = $1 ORDER BY level ASC',
         [problemId]
       ),
-      pool.query<SolutionRow>(
+      this.executor.query<SolutionRow>(
         'SELECT code, explanation FROM solutions WHERE problem_id = $1 LIMIT 1',
         [problemId]
       ),
@@ -123,7 +130,7 @@ export class PostgresProblemRepository implements ProblemRepository {
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const probRes = await pool.query<ProblemRow>(
+    const probRes = await this.executor.query<ProblemRow>(
       `SELECT * FROM problems ${whereClause} ORDER BY created_at ASC`,
       values
     );
@@ -137,7 +144,7 @@ export class PostgresProblemRepository implements ProblemRepository {
   }
 
   async save(problem: Problem): Promise<void> {
-    await withTransaction(async (client) => {
+    const runInTx = async (client: PoolClient) => {
       // 1. Upsert problem by slug
       const probUpsert = `
         INSERT INTO problems (slug, title, topic, difficulty, description, starter_code)
@@ -191,6 +198,12 @@ export class PostgresProblemRepository implements ProblemRepository {
           [dbProblemId, problem.solution.code, problem.solution.explanation || null]
         );
       }
-    });
+    };
+
+    if (this.client) {
+      await runInTx(this.client);
+    } else {
+      await withTransaction(runInTx);
+    }
   }
 }
