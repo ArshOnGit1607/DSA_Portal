@@ -124,14 +124,12 @@ export class SyncEngine {
    */
   onStatus(callback: (event: SyncStatusEvent) => void): () => void {
     this.listeners.add(callback);
-    // Emit initial status immediately to new listener
-    this.pendingCount().then((count) => {
-      callback({
-        status: this.status,
-        lastSyncedAt: this.lastSyncedAt,
-        error: this.lastError,
-        pendingCount: count,
-      });
+    // Emit initial status synchronously
+    callback({
+      status: this.status,
+      lastSyncedAt: this.lastSyncedAt,
+      error: this.lastError,
+      pendingCount: 0,
     });
 
     return () => {
@@ -172,10 +170,7 @@ export class SyncEngine {
       schemaVersion: 1,
     });
 
-    const pending = await this.pendingCount();
-    this.emitStatus(this.status, undefined, pending);
-
-    return {
+    const op: SyncOperation<T> = {
       opId: id,
       deviceId: this.deviceId,
       userId: this.userId,
@@ -186,6 +181,19 @@ export class SyncEngine {
       hlc: hlcStr,
       schemaVersion: 1,
     };
+
+    // Automatically persist to local domain tables
+    if (entity === 'settings') {
+      const settingsObj = (payload as any).settings || payload;
+      await this.storage.saveSettings(this.userId, settingsObj, hlcStr);
+    } else if (entity === 'submission') {
+      await this.storage.applyRemoteOperation(op as any);
+    }
+
+    const pending = await this.pendingCount();
+    this.emitStatus(this.status, undefined, pending);
+
+    return op;
   }
 
   /**
@@ -318,7 +326,7 @@ export class SyncEngine {
     } catch (err: any) {
       this.lastError = err;
 
-      // Check if cursor expired -> trigger bootstrap if available
+      // Check if cursor expired -> trigger bootstrap recovery if available
       if (err?.code === 'SYNC_CURSOR_EXPIRED' && this.transport.bootstrap) {
         try {
           const snapshot = await this.transport.bootstrap();
@@ -326,8 +334,18 @@ export class SyncEngine {
             'last_synced_server_seq',
             String(snapshot.watermarkSeq)
           );
+          this.currentBackoffMs = this.minBackoffMs;
+          this.lastSyncedAt = new Date();
+          this.lastError = null;
+          await this.emitStatus('idle');
+          return {
+            pushedCount: totalPushed,
+            pulledCount: totalPulled,
+            serverSeqWatermark: snapshot.watermarkSeq,
+            hasMore: false,
+          };
         } catch {
-          // Fall through to error handling
+          // If bootstrap fails, continue to standard error handling
         }
       }
 
