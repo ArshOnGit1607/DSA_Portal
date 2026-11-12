@@ -11,7 +11,7 @@ Queue reliability on the PostgreSQL queue (CR-005). Full design: [`/docs/queue-d
 - **Metrics:** each worker serves Prometheus `GET /metrics` on `WORKER_METRICS_PORT`.
 - **Chaos script:** `workers/scripts/chaos.ts` kills a worker mid-job and proves the job is processed again exactly once. It passes.
 - Migration `003_queue_reliability` (up + down). OpenAPI updated (429, documented 409, 2 admin routes). Contract test covers them.
-- Also fixed: `main` didn't build after the latest merges. See CR-015.
+- Also fixed: `main` didn't build after the latest merges. See CR-020.
 
 ## How to run
 ```bash
@@ -41,7 +41,7 @@ Metric names (all prefixed `dsa_queue_`):
 | `dsa_queue_job_duration_seconds` | histogram (0.1 … 30 s) | `histogram_quantile(0.95, sum(rate(..._bucket[5m])) by (le))` |
 
 Scrape target: every worker on `WORKER_METRICS_PORT`. Connections per worker process: `WORKER_CONCURRENCY + 2`.
-Please review CR-014 (migration 003 in your folder) and CR-015 (build fixes needed in `core/src/storage` and `core/src/sync`).
+Please review CR-019 (migration 003 in your folder) and CR-020 (build fixes needed in `core/src/storage` and `core/src/sync`).
 
 ## For Person 3 (clients)
 - On `429 QUEUE_FULL`, wait `Retry-After` seconds and resend **with the same Idempotency-Key**.

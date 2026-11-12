@@ -161,7 +161,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Status:** pending
 - **Approved by:** —
 
-## CR-014
+## CR-019
 - **Proposed by:** Person 1 (Day 6), **for Person 2** (owner of `/server/src/db`) and **for Person 3** (API additions)
 - **Changes already made (approved by Person 1's user), so the queue can retry, recover stalled jobs and dead-letter:**
   1. New migration `server/src/db/migrations/003_queue_reliability` (up + down, checked both ways): `submissions.attempts`, `run_after`, `lock_token`, `locked_until`, `last_error`; partial indexes on `running` rows (lease) and `failed` rows (dead-letter list). The `submissions_notify_queued` trigger now also fires on `UPDATE OF status` to `queued` (retries, requeue). No existing column changed. `PostgresSubmissionRepository` is unchanged and ignores the new columns.
@@ -170,7 +170,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Status:** done, needs Person 2's review
 - **Approved by:** —
 
-## CR-015
+## CR-020
 - **Proposed by:** Person 1 (Day 6), **for Person 2**
 - **Problem:** `main` did not build after PR #7/#8. `core/src/storage/repositories/sqlite-submission.repository.ts` uses `result.passed/total/results`, which don't exist on core's `ExecutionResult` (same issue CR-007 fixed for PostgreSQL), and lacks `findByIdempotencyKey`. `core/src/sync/__tests__/hlc.test.ts:56` also fails to type-check. `server/src/db/repositories/audit.repository.ts` imported `AuditRepository`/`AuditEntry` from `@dsa-portal/core`, which did not export them.
 - **Changes already made (Person 1's files only):** `core/src/index.ts` now re-exports the `AuditEntry` and `AuditRepository` types (type-only, so SQLite never loads in the server). `core/tsconfig.json` excludes `src/storage` and `src/sync` from core's build (nothing imports them yet), so `npm run build` is green again.
