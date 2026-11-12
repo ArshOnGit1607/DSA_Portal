@@ -2,12 +2,36 @@
   "name": "@dsa-portal/ui-core",
   "private": true,
   "version": "0.0.1",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "Shared client logic for web, desktop and mobile: typed API client, Zustand stores, React hooks, theme tokens, platform adapters, MSW mocks.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mocks/browser": "./src/mocks/browser.ts",
+    "./mocks/node": "./src/mocks/node.ts",
+    "./theme/tokens.json": "./src/theme/tokens.json",
+    "./auth/refresh": "./src/auth/refresh.ts"
+  },
   "scripts": {
-    "build": "tsc"
+    "gen:api": "openapi-typescript ../docs/openapi.yaml -o src/api/schema.d.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "dependencies": {
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "@testing-library/react": "^14.3.1",
+    "@types/react": "~18.2.79",
+    "jsdom": "^24.1.3",
+    "msw": "^2.15.0",
+    "openapi-typescript": "^7.13.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.1"
   }
 }
