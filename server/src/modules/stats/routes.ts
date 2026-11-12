@@ -1,20 +1,32 @@
 import type { FastifyPluginAsync } from 'fastify';
-import type { StatsRepository } from '@dsa-portal/core';
+import { computeStreak, isoDay, type StatsStore } from './stats.service';
 
-/**
- * `streak` is left out of GET /stats/me: the spec's StreakStat needs currentStreak, longestStreak
- * and lastSolvedAt, but StatsRepository only returns the current streak (see CR-011).
- */
-export const statsRoutes: FastifyPluginAsync<{ stats: StatsRepository }> = async (app, { stats }) => {
-  app.get('/stats/me', { preHandler: app.authenticate }, async (req) => {
-    const [summary, topics] = await Promise.all([
-      stats.getUserStats(req.user.sub),
-      stats.getTopicStats(req.user.sub),
+export const statsRoutes: FastifyPluginAsync<{ stats: StatsStore }> = async (app, { stats }) => {
+  const auth = { onRequest: app.authenticate };
+
+  app.get('/stats/me', auth, async (req) => {
+    const id = req.user.sub;
+    const [summary, topics, difficulties, firstSolves] = await Promise.all([
+      stats.getUserStats(id),
+      stats.getTopicStats(id),
+      stats.getDifficultyStats(id),
+      stats.getFirstSolves(id),
     ]);
-    return { attempted: summary.attempted, solved: summary.solved, totalProblems: summary.totalProblems, topics };
+    return {
+      attempted: summary.attempted,
+      solved: summary.solved,
+      totalProblems: summary.totalProblems,
+      streak: computeStreak(firstSolves),
+      topics,
+      difficulties, // CR-016: additive field for the difficulty chart
+    };
   });
 
-  app.get('/stats/me/topics', { preHandler: app.authenticate }, async (req) => ({
-    topics: await stats.getTopicStats(req.user.sub),
-  }));
+  app.get('/stats/me/topics', auth, async (req) => ({ topics: await stats.getTopicStats(req.user.sub) }));
+
+  // CR-016: not in openapi.yaml yet. `days` (UTC, ascending) feeds the streak calendar.
+  app.get('/stats/me/streak', auth, async (req) => {
+    const firstSolves = await stats.getFirstSolves(req.user.sub);
+    return { ...computeStreak(firstSolves), days: [...new Set(firstSolves.map(isoDay))].sort() };
+  });
 };

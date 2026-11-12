@@ -80,14 +80,15 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Approved by:** —
 
 ## CR-010
-- **Proposed by:** Person 3 (Day 1), **for Person 1** (owner of `server/src/app.ts`, `server/src/index.ts`, `/workers`)
+- **Proposed by:** Person 3 (Day 3), **for Person 1** (owner of `server/src/app.ts`, `server/src/index.ts`, `/workers`)
 - **Field:** route wiring only, no endpoint change
-- **Proposed change:** in `app.ts`, add `auth?: AuthStore` and `stats?: StatsRepository` to `AppOptions`, default them to `new InMemoryAuthStore()` and `new InMemoryStatsRepository(deps.problems, deps.submissions)`, and inside the `/api/v1` plugin add
-  `await api.register(authRoutes, { auth: deps.auth });` and `await api.register(statsRoutes, { stats: deps.stats });`.
-  In `index.ts`, pass `auth: new PostgresAuthStore()` and `stats: new PostgresStatsRepository()`.
-  The existing `app.authenticate` stub can stay: access tokens are `{ sub: userId }`, signed with the same `app.jwt`, so no swap is needed.
-  Once wired, add the 5 auth + 2 stats routes to `openapi-contract.test.ts` (they already pass the same Ajv check in `server/__tests__/auth-stats.test.ts`).
-  `statsServiceStub` in `/workers` can stay a no-op: `PostgresSubmissionRepository.save()` already updates `user_problem_stats`.
+- **Proposed change:** in `app.ts`:
+  - `AppOptions` gets `auth?: AuthStore`, `stats?: StatsStore`, `deleteProblem?: (id: string) => Promise<boolean>`; defaults `new InMemoryAuthStore()`, `new InMemoryStatsRepository(deps.problems, deps.submissions)`, `async () => false`.
+  - Swap the TEMP decorator for Person 3's: `app.decorate('authenticate', authenticate)` (from `modules/auth/hooks`; same behaviour, so nothing else changes).
+  - Inside the `/api/v1` plugin: `await api.register(authRoutes, { auth: deps.auth });`, `await api.register(adminRoutes, { auth: deps.auth, problems: deps.problems, deleteProblem: deps.deleteProblem });`, `await api.register(statsRoutes, { stats: deps.stats });`.
+  - In `index.ts`: `auth: new PostgresAuthStore()`, `stats: new PostgresStatsStore()`, `deleteProblem: unpublishProblem`.
+  - `server/__tests__/helpers/person3-app.ts` (`buildPerson3App`) shows the exact wiring and can be deleted afterwards. Then add the auth/admin/stats routes to `openapi-contract.test.ts`.
+  - `statsServiceStub` in `/workers` can stay a no-op: counters are written in the submission transaction (see CR-017).
 - **Status:** pending
 - **Approved by:** —
 
@@ -95,8 +96,9 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Proposed by:** Person 3 (Day 1), **for Person 2**
 - **Field:** `StatsRepository.getUserStats()` return shape (core)
 - **Proposed change:** return `streak: { currentStreak, longestStreak, lastSolvedAt }` (the spec's `StreakStat`) instead of `streak: number`.
-- **Reason:** `GET /stats/me` must return a full `StreakStat` or nothing; with only the current streak it is left out of the response for now. Also: the streak is computed with the server's local timezone.
-- **Status:** pending
+- **Reason:** `GET /stats/me` must return a full `StreakStat` or nothing. Also: the streak is computed with the server's local timezone.
+- **Update (Day 4):** no longer blocking. Person 3's stats module now computes the full `StreakStat` itself (UTC days) from `user_problem_stats.first_solved_at` (`PostgresStatsStore.getFirstSolves`). `getUserStats().streak` is unused by the API; Person 2 may keep or drop it.
+- **Status:** superseded
 - **Approved by:** —
 
 ## CR-012
@@ -112,6 +114,50 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `POST /api/v1/auth/refresh` and `/auth/logout`
 - **Proposed change:** also accept `{ "refreshToken": "..." }` in the JSON body when there is no `refresh_token` cookie.
 - **Reason:** the mobile (Expo) client has no reliable cookie jar; login already returns `refreshToken` in the body, but today it can only be sent back as a cookie. Not implemented until approved.
+- **Update (Day 5):** withdrawn. Native clients (Electron main, Expo) send the stored token in a `Cookie: refresh_token=...` header and read the rotated one from `Set-Cookie` (`nativeRefresh` in `/ui-core`), which the spec already allows.
+- **Status:** withdrawn
+- **Approved by:** —
+
+## CR-014
+- **Proposed by:** Person 3 (Day 3), **for Person 2**
+- **Field:** `sessions` table
+- **Proposed change:** add `revoked_at TIMESTAMPTZ NULL` and `family_id UUID NOT NULL` (one family per login).
+- **Reason:** refresh rotation with reuse detection is implemented today without a schema change: a rotated session keeps its row with `expires_at = 'epoch'`, and presenting it again revokes all of the user's sessions. That works, but (1) a cleanup job deleting expired rows also forgets rotated ones, and (2) reuse revokes *every* device instead of only the stolen family. With the two columns, `PostgresAuthStore.consumeSession` changes in one place.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-015
+- **Proposed by:** Person 3 (Day 3), **for Person 1** (core `ProblemRepository`) and **Person 2** (`PostgresProblemRepository`)
+- **Field:** `ProblemRepository` interface
+- **Proposed change:** add `delete(id): Promise<boolean>` (soft delete: `is_published = false`), and make `findById` skip unpublished problems for non-admin reads.
+- **Reason:** `DELETE /admin/problems` needs it. Until then the admin module takes a `deleteProblem` function and the server passes `unpublishProblem` (an `UPDATE problems SET is_published = false` in `modules/admin/routes.ts`). Known gap: `GET /problems/{id}` still returns an unpublished problem because `findById` doesn't filter.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-016
+- **Proposed by:** Person 3 (Day 4), **for Person 1** (openapi owner)
+- **Field:** stats endpoints in `openapi.yaml`
+- **Proposed change (already served by the stats module, additive only):**
+  1. New `GET /api/v1/stats/me/streak` (bearer) → `200 StreakStat & { days: string[] }` (`days` = UTC dates `YYYY-MM-DD`, ascending, on which the user first solved a problem; for the streak calendar).
+  2. `GET /api/v1/stats/me` additionally returns `difficulties: [{ difficulty, attempted, solved }]` (difficulty chart) and now always includes `streak`.
+  3. Document `429 TOO_MANY_REQUESTS` (+ `Retry-After` header) on `POST /auth/login` (login throttling), `409` already exists on register, `403 FORBIDDEN` on admin routes already exists.
+- **Reason:** Day 4 stats dashboard (streak calendar, difficulty breakdown) and the Day 3 login throttling.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-017
+- **Proposed by:** Person 3 (Day 4), **for Person 2**
+- **Field:** `PostgresSubmissionRepository.save()`
+- **Proposed change:** replace the inline `user_problem_stats` upsert with `await updateStatsOnSubmission(client, submission)` from `server/src/modules/stats/stats.service.ts` (same SQL, same transaction).
+- **Reason:** one owner for the stats model (Person 3), no duplicate SQL. Behaviour is identical; `person3-postgres.test.ts` checks it under 10 concurrent transactions.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-018
+- **Proposed by:** Person 3 (Day 5), **for Person 1** (`/core`)
+- **Field:** `SandboxOptions` in `core/src/sandbox.ts`
+- **Proposed change:** optional `nodePath?: string` and `extraEnv?: Record<string, string>` used by `childCommand` instead of the hard-coded `'node'` from `PATH`.
+- **Reason:** the desktop app judges offline with core's sandbox. Today that needs a Node.js install on the user's machine; with the option the app can run its own Electron binary as Node (`process.execPath` + `ELECTRON_RUN_AS_NODE=1`), so installers work on machines without Node.
 - **Status:** pending
 - **Approved by:** —
 
