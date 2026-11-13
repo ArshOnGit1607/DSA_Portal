@@ -81,12 +81,16 @@ sequenceDiagram
         API->>PG: fetch submission
         API-->>C: 200 {status, passed, total, results}
     end
-    Note over C,API: Day 7 adds Socket.IO push (submission:finished) so clients can stop polling.
+    PG-->>API: NOTIFY dsa_events (trigger on every status change, migration 005)
+    API-->>C: Socket.IO submission:queued / running / finished (room user:<id>)
+    Note over C,API: Day 7: clients get pushed events; polling stays as the fallback (docs/websocket-events.md).
 ```
 
 **Day 6 reliability:** retries with exponential backoff, a dead-letter list (`status = failed`, admin requeue), leases so a killed worker's job is re-claimed, 429 backpressure and Prometheus metrics. Full design and failure table: [`queue-design.md`](./queue-design.md).
 
 **Why this is safe with several workers:** `FOR UPDATE SKIP LOCKED` hands each queued row to exactly one worker; `judgeSubmission` ignores rows that are already judged; the unique index `(user_id, idempotency_key)` stops duplicate POSTs even when retries race. If a NOTIFY is missed, workers still poll every `WORKER_POLL_MS`.
+
+**Day 7, real time:** Socket.IO runs on the API's HTTP server and authenticates with the JWT in the handshake. Database triggers publish every submission status change, plus new daily challenges and leaderboard changes, with `pg_notify`. Each API instance `LISTEN`s and forwards to its own sockets, so it works with several instances and no Redis (CR-021). The daily challenge is a deterministic pick per UTC day, created by the worker just after midnight. Details: [`websocket-events.md`](./websocket-events.md).
 
 ## 3. Deployment view
 

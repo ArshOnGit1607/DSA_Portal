@@ -177,3 +177,25 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Proposed change (Person 2):** fix the SQLite submission repository to the `{ status, perTest }` shape, add `findByIdempotencyKey`, fix the HLC test, then remove the two excludes in `core/tsconfig.json`. Also, `npx eslint` reports an unused `PoolClient` import in `submission.repository.ts:1` (the only lint error in the repo).
 - **Status:** pending
 - **Approved by:** —
+
+## CR-021
+- **Proposed by:** Person 1 (Day 7), **for the team** (stack decision) and **Person 2** (migration in `/server/src/db`)
+- **Proposed change:** Day 7 without Redis or BullMQ, continuing CR-005:
+  1. **Socket.IO fan-out over PostgreSQL `LISTEN/NOTIFY`, not Redis pub/sub + the Socket.IO Redis adapter.** Triggers (migration `005_realtime_events`, up + down, checked both ways) `pg_notify('dsa_events', …)` on every submission status change, on a fully passing submission (`leaderboard:updated`) and on a new `daily_challenges` row (`daily:new`). Each API instance LISTENs and emits to its own sockets, so several instances work. Also adds a partial index for the leaderboard on `user_problem_stats (first_solved_at) WHERE solved`. No existing column changed.
+  2. **Daily challenge without a BullMQ repeatable job:** a deterministic pick (sha256 of the UTC date over the sorted published slugs), saved in the existing `daily_challenges` table by the worker just after each UTC midnight (and lazily by `GET /daily-challenge`). The insert announces it, so it fires once even with many workers.
+  3. **Spec (additive):** `GET /leaderboard` gets `period=week|all` (default `all`) and a 400. Ranking is by problems solved, then the time the user reached that count (earlier wins), then user id. `totalScore` = Easy 1, Medium 2, Hard 3 per solved problem. `GET /daily-challenge` documents its 401. `docs/websocket-events.md` is rewritten with the Day 7 brief's event names; Person 3's unmerged client (fork) still uses the Day 1 draft names and must switch.
+- **Trade-off:** NOTIFY payloads are capped at 8 KB and aren't replayed to disconnected clients. Clients keep REST polling as the fallback. If we ever need Redis (Person 3's caching), we can swap the event source behind the same `EventSource` interface without touching clients.
+- **Status:** done, needs team sign-off and Person 2's review of migration 005
+- **Approved by:** —
+
+## CR-022
+- **Proposed by:** Person 1 (Day 7), **for Person 3**
+- **Context:** Person 3's fork (`ansarimehran24/DSA_Portal`, commit `b2e822a` and its siblings, not merged) adds its own `server/src/modules/{leaderboard,daily}/routes.ts` and edits `server/src/app.ts`, `server/src/index.ts` and `workers/src/main.ts`, which are Person 1's files. Person 1's Day 7 implementation of the same endpoints and of the socket gateway is now on `main` (CR-021).
+- **Proposed change (before Person 3 merges their Day 7):**
+  1. Drop the fork's `modules/leaderboard/routes.ts` and `modules/daily/routes.ts`. Use `main`'s (keyset pagination, `period=week|all`, daily saved per UTC day and announced with `daily:new`).
+  2. Keep the Redis cache, but as a wrapper: a `CachedLeaderboardStore implements LeaderboardStore` around `PostgresLeaderboardStore` (key `period`) and a `CachedDailyChallengeStore implements DailyChallengeStore` (key: date). Pass them through `buildApp({ leaderboard, daily })`. Invalidate on the `leaderboard:updated` / `daily:new` events or keep the short TTLs. Person 1 will wire `cache` into `app.ts`/`index.ts` once it's on `main`. Send the wiring as a CR like CR-010, not an edit.
+  3. `ui-core/src/realtime.ts`: connect with `io(url, { auth: { token } })` instead of emitting `auth:join`; listen for `submission:queued|running|finished` (payload `{ submissionId, problemId, status, passed, total }`; fetch per-test results over REST) and `leaderboard:updated` / `daily:new`. See `/docs/websocket-events.md`.
+  4. Rename `004_session_families` to `006_session_families` (`004` and `005` are taken on `main`).
+  5. `/metrics`: the worker already serves Prometheus on `WORKER_METRICS_PORT`. Put the API's cache counters there or at `GET /metrics` on the API, but agree the name with Person 2 so one scrape config covers both.
+- **Status:** pending
+- **Approved by:** —

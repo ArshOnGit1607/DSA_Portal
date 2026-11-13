@@ -1,4 +1,4 @@
-# API examples (Days 4–6)
+# API examples (Days 4–7)
 
 curl examples for every endpoint implemented so far. Contract: `/docs/openapi.yaml`.
 Auth, stats, leaderboard, daily-challenge, admin and sync endpoints come later (Persons 2/3, Days 5–7).
@@ -120,6 +120,25 @@ curl -s localhost:9464/metrics
 # dsa_queue_failed 2
 # dsa_queue_jobs_total{outcome="judged"} 41
 # dsa_queue_job_duration_seconds_bucket{le="1"} 38 ...
+```
+
+## Leaderboard and daily challenge (Day 7)
+
+```bash
+# Public. Ranked by problems solved, then who got there first. period=week|all (default all), keyset pagination
+curl -s "$B/leaderboard?period=week&limit=10"
+# {"data":[{"userId":"...","username":"student","solved":3,"totalScore":5,"rank":1},...],"nextCursor":null}
+
+# Today's (UTC) challenge, the same problem for everyone
+curl -s $B/daily-challenge -H "$H"
+# {"date":"2026-11-13","problemId":"valid-parentheses","problem":{"id":"valid-parentheses","title":"Valid Parentheses",...}}
+```
+
+Real-time events (Socket.IO, same port): see [`websocket-events.md`](./websocket-events.md). Quick check from a terminal:
+
+```bash
+node -e "require('socket.io-client').io('http://localhost:3000',{auth:{token:process.argv[1]}}).onAny((e,d)=>console.log(e,d))" "$TOKEN"
+# then submit in another terminal → submission:queued, submission:running, submission:finished
 ```
 
 ## Common errors
