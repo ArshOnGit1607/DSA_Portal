@@ -16,12 +16,9 @@ let app: ElectronApplication;
 let win: Page;
 
 test.beforeAll(async () => {
-  // The real server app with Person 3's modules, as CR-010 wires them (in-memory stores).
+  // The real server app (auth/admin/stats wired in app.ts since CR-010), with in-memory stores.
   const { buildApp } = await import('../../server/src/app');
-  const { authRoutes } = await import('../../server/src/modules/auth/routes');
-  const { InMemoryAuthStore } = await import('../../server/src/modules/auth/store');
   api = buildApp({ logger: false });
-  api.register(async (v1) => v1.register(authRoutes, { auth: new InMemoryAuthStore() }), { prefix: '/api/v1' });
   const url = await api.listen({ port: 0, host: '127.0.0.1' });
   const reg = await fetch(`${url}/api/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(USER) });
   expect(reg.status).toBe(201);
