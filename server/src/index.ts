@@ -5,6 +5,9 @@ import { PostgresAuthStore } from './modules/auth/store';
 import { PostgresSubmissionQueue } from './modules/submissions/queue';
 import { PostgresStatsStore } from './modules/stats/stats.service';
 import { unpublishProblem } from './modules/admin/routes';
+import { PostgresLeaderboardStore } from './modules/leaderboard/store';
+import { PostgresDailyChallengeStore } from './modules/daily/store';
+import { PostgresEventSource } from './modules/realtime/gateway';
 
 const app = buildApp({
   problems: new PostgresProblemRepository(),
@@ -13,6 +16,9 @@ const app = buildApp({
   auth: new PostgresAuthStore(),
   stats: new PostgresStatsStore(),
   deleteProblem: unpublishProblem,
+  leaderboard: new PostgresLeaderboardStore(),
+  daily: new PostgresDailyChallengeStore(),
+  events: new PostgresEventSource(),
 });
 app.addHook('onClose', closePool);
 

@@ -22,6 +22,11 @@ import { adminRoutes } from './modules/admin/routes';
 import { statsRoutes } from './modules/stats/routes';
 import { InMemoryStatsRepository } from './modules/stats/in-memory-stats.repository';
 import type { StatsStore } from './modules/stats/stats.service';
+import { leaderboardRoutes } from './modules/leaderboard/routes';
+import { InMemoryLeaderboardStore, type LeaderboardStore } from './modules/leaderboard/store';
+import { dailyRoutes } from './modules/daily/routes';
+import { InMemoryDailyChallengeStore, type DailyChallengeStore } from './modules/daily/store';
+import { attachRealtime, type EventSource } from './modules/realtime/gateway';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -48,6 +53,10 @@ export interface AppOptions {
   deleteProblem?: (id: string) => Promise<boolean>;
   throttle?: LoginThrottle;
   backpressure?: Partial<Backpressure>;
+  leaderboard?: LeaderboardStore;
+  daily?: DailyChallengeStore;
+  /** Real-time events for Socket.IO (PostgresEventSource). No gateway without it. */
+  events?: EventSource;
 }
 
 export function buildApp(opts: AppOptions = {}) {
@@ -68,11 +77,17 @@ export function buildApp(opts: AppOptions = {}) {
     throw new Error('Pass a queue (PostgresSubmissionQueue) together with a non-memory submission repository');
   }
   const problems = opts.problems ?? new InMemoryProblemRepository();
+  const auth = opts.auth ?? new InMemoryAuthStore();
+  if (!opts.leaderboard && !(submissions instanceof InMemorySubmissionRepository)) {
+    throw new Error('Pass a leaderboard store (PostgresLeaderboardStore) together with a non-memory submission repository');
+  }
   const deps = {
     problems,
     submissions,
     queue: opts.queue ?? new InMemorySubmissionQueue(submissions as InMemorySubmissionRepository),
-    auth: opts.auth ?? new InMemoryAuthStore(),
+    auth,
+    leaderboard: opts.leaderboard ?? new InMemoryLeaderboardStore(submissions as InMemorySubmissionRepository, problems, auth),
+    daily: opts.daily ?? new InMemoryDailyChallengeStore(problems),
     stats: opts.stats ?? new InMemoryStatsRepository(problems, submissions),
     deleteProblem: opts.deleteProblem ?? (async () => false),
     throttle: opts.throttle,
@@ -139,9 +154,12 @@ export function buildApp(opts: AppOptions = {}) {
       await api.register(authRoutes, deps);
       await api.register(adminRoutes, deps);
       await api.register(statsRoutes, deps);
+      await api.register(leaderboardRoutes, deps);
+      await api.register(dailyRoutes, deps);
     },
     { prefix: '/api/v1' }
   );
 
+  if (opts.events) attachRealtime(app, opts.events);
   return app;
 }
