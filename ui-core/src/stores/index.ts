@@ -156,14 +156,24 @@ export interface SubmissionState {
 const uuid = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-/** Polls GET /submissions/:id until judged/failed (Day 7 adds a socket push with polling as fallback). */
+/**
+ * Polls GET /submissions/:id until judged/failed. `waitBetweenPolls` lets a socket push wake the
+ * poll early (createDsa wires Socket.IO); without it, or while the socket is down, it is plain polling.
+ */
 export function createSubmissionStore(
   api: DsaApi,
-  opts: { pollMs?: number; timeoutMs?: number; onJudged?: (s: Submission) => void; sleep?: (ms: number) => Promise<void> } = {}
+  opts: {
+    pollMs?: number;
+    timeoutMs?: number;
+    onJudged?: (s: Submission) => void;
+    sleep?: (ms: number) => Promise<void>;
+    waitBetweenPolls?: (target: { submissionId: string; problemId: string }) => Promise<unknown>;
+  } = {}
 ): StoreApi<SubmissionState> {
   const pollMs = opts.pollMs ?? 750;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const wait = opts.waitBetweenPolls ?? (() => sleep(pollMs));
   let run = 0; // a newer submit or reset cancels an older poll loop
   return createStore<SubmissionState>((set) => ({
     status: 'idle',
@@ -191,7 +201,7 @@ export function createSubmissionStore(
             return;
           }
           if (Date.now() > deadline) throw new Error('Judging is taking too long; check back in a moment');
-          await sleep(pollMs);
+          await wait({ submissionId, problemId });
         }
       } catch (e) {
         if (mine === run) set({ status: 'error', error: message(e) });

@@ -19,6 +19,7 @@ export function Layout() {
         <nav aria-label="Main">
           <NavLink to="/">Practice</NavLink>
           <NavLink to="/stats">Stats</NavLink>
+          <NavLink to="/leaderboard">Leaderboard</NavLink>
         </nav>
         <span className="spacer" />
         {desktop && (

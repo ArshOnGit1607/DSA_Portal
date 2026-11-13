@@ -45,4 +45,5 @@ export const dsa = createDsa({
     if (token) await fetch(`${API_URL}/api/v1/auth/logout`, { method: 'POST', headers: { cookie: `refresh_token=${token}` } }).catch(() => {});
   },
   wrapApi: (http) => withProblemCache(http, localStore),
+  realtimeUrl: API_URL, // Socket.IO for live results; polling takes over while it is down
 });

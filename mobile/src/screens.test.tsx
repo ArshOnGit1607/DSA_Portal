@@ -5,6 +5,7 @@ import Login from '../app/login';
 import Practice from '../app/(app)/(tabs)/index';
 import ProblemScreen from '../app/(app)/problem/[id]';
 import Stats from '../app/(app)/(tabs)/stats';
+import Leaderboard from '../app/(app)/(tabs)/leaderboard';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -44,6 +45,8 @@ function setup(overrides: Partial<DsaApi> = {}) {
     solution: async () => { throw new ApiError(403, 'SOLUTION_LOCKED', 'locked'); },
     submit: jest.fn(async () => ({ submissionId: 's1', status: 'queued' })),
     submission: async () => (polls++ === 0 ? { ...judged(0), status: 'queued' as const } : judged(1)),
+    leaderboard: async () => ({ data: [{ userId: 'x', username: 'ada', solved: 9, totalScore: 20, rank: 1 }, { userId: 'u', username: 'mia', solved: 1, totalScore: 1, rank: 2 }], nextCursor: null }),
+    dailyChallenge: async () => ({ date: '2026-11-13', problemId: 'two-sum', problem }),
     stats: async () => ({ attempted: 1, solved: 1, totalProblems: 40, topics: [{ topic: 'Arrays', attempted: 1, solved: 1 }], difficulties: [{ difficulty: 'Easy' as const, attempted: 1, solved: 1 }], streak: { currentStreak: 2, longestStreak: 4, lastSolvedAt: null } }),
     streak: async () => ({ currentStreak: 2, longestStreak: 4, lastSolvedAt: null, days: ['2026-11-12'] }),
     ...overrides,
@@ -105,6 +108,23 @@ describe('Problem screen', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Reveal solution…' }));
     expect(alert).toHaveBeenCalled();
     expect(await screen.findByText('Solve the problem first to unlock its solution')).toBeTruthy();
+  });
+});
+
+describe('Day 7: leaderboard + daily challenge', () => {
+  it('lists ranks and marks the signed-in user', async () => {
+    const { ui, dsa } = setup();
+    await act(() => dsa.stores.auth.getState().login('mia@x.io', 'right-pass-1'));
+    ui(<Leaderboard />);
+    expect(await screen.findByLabelText('Rank 1, ada, 9 solved, score 20')).toBeTruthy();
+    expect(screen.getByLabelText('Rank 2, mia (you), 1 solved, score 1')).toBeTruthy();
+  });
+
+  it('practice shows the daily challenge and opens it', async () => {
+    const { ui } = setup();
+    ui(<Practice />);
+    fireEvent.press(await screen.findByRole('button', { name: "Solve today's challenge" }));
+    expect(mockPush).toHaveBeenCalledWith('/problem/two-sum');
   });
 });
 

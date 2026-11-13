@@ -51,6 +51,7 @@ fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md
 .editor { flex: 1; min-height: 260px; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
 .results-card { max-height: 35%; overflow: auto; margin: 0; padding: var(--space-md); }
 .results { border-collapse: collapse; width: 100%; font-size: var(--font-sm); }
+tr.me { background: var(--color-surfaceRaised); font-weight: 700; }
 .results th, .results td { text-align: left; padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--color-border); }
 @media (max-width: 900px) { .problem-layout { grid-template-columns: 1fr; height: auto; } .editor { height: 50vh; } }
 

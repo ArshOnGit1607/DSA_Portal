@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useProblem, useSettings, useSubmission } from '@dsa-portal/ui-core';
+import { useProblem, useSettings, useSubmissionStatus } from '@dsa-portal/ui-core';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResultsPanel, type ResultsView } from '../components/ResultsPanel';
 import { desktop } from '../platform';
@@ -12,7 +12,7 @@ const CodeEditor = lazy(() => import('../components/CodeEditor').then((m) => ({ 
 export function ProblemPage() {
   const { id = '' } = useParams();
   const p = useProblem();
-  const sub = useSubmission();
+  const sub = useSubmissionStatus();
   const { editorFontSize } = useSettings();
   const [run, setRun] = useState<ResultsView | null>(null);
   const [showResults, setShowResults] = useState<'run' | 'submit' | null>(null);
@@ -129,6 +129,9 @@ export function ProblemPage() {
         </div>
         <div className="card results-card">
           <h2>Results</h2>
+          {(sub.status === 'submitting' || sub.status === 'judging') && (
+            <p className="muted">{sub.live ? 'Live: the result appears as soon as it is judged.' : 'Checking for the result every second…'}</p>
+          )}
           <ResultsPanel view={showResults === 'submit' ? submitView : showResults === 'run' ? run : null} />
         </div>
       </section>

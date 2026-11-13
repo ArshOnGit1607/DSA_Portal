@@ -70,6 +70,8 @@ const apiBase = desktop?.apiBaseUrl ?? import.meta.env.VITE_API_URL ?? '';
 export const dsa = createDsa({
   baseUrl: apiBase,
   settingsStorage: window.localStorage,
+  // Socket.IO on the API origin for live results; VITE_REALTIME=0 turns it off (polling only).
+  realtimeUrl: import.meta.env.VITE_REALTIME === '0' ? undefined : apiBase,
   ...(desktop && {
     refresh: () => desktop.auth.refresh(),
     onTokens: (t) => desktop.auth.saveRefreshToken(t.refreshToken),

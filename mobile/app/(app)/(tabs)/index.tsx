@@ -3,6 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useDsa, useProblem, type Difficulty } from '@dsa-portal/ui-core';
 import { Body, Button, Card, Chip, ErrorText, H1, H2 } from '../../../src/components/ui';
+import { DailyChallengeCard } from '../../../src/components/DailyChallengeCard';
 import { useTheme } from '../../../src/theme';
 
 const DIFFICULTIES: Array<Difficulty | null> = [null, 'Easy', 'Medium', 'Hard'];
@@ -27,6 +28,7 @@ export default function Practice() {
 
   return (
     <ScrollView style={{ backgroundColor: c.bg }} contentContainerStyle={{ padding: space.lg, maxWidth: 720, width: '100%', alignSelf: 'center' }}>
+      <DailyChallengeCard />
       <Card>
         <H1>Practice</H1>
         <Body muted>Pick a topic and difficulty and get a random problem.</Body>

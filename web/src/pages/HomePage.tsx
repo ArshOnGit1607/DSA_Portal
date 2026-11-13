@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from 'zustand';
 import { useDsa, useProblem, type Difficulty } from '@dsa-portal/ui-core';
 import { connectivity, desktop } from '../platform';
+import { DailyChallengeCard } from '../components/DailyChallengeCard';
 
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard'];
 
@@ -30,6 +31,8 @@ export function HomePage() {
   };
 
   return (
+    <>
+    <DailyChallengeCard />
     <section className="card narrow" aria-labelledby="pick-title">
       <h1 id="pick-title">Practice</h1>
       <p className="muted">Pick a topic and difficulty, and get a random problem.</p>
@@ -55,5 +58,6 @@ export function HomePage() {
       {error && <p role="alert" className="error">{error}</p>}
       <button className="primary" onClick={start} disabled={loading}>{loading ? 'Finding a problem…' : 'Start'}</button>
     </section>
+    </>
   );
 }

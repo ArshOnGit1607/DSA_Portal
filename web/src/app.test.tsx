@@ -43,6 +43,21 @@ describe('web app', () => {
   });
 });
 
+describe('Day 7 screens', () => {
+  it('leaderboard lists ranked users and marks you', async () => {
+    renderApp('#/leaderboard');
+    expect(await screen.findByRole('heading', { name: 'Leaderboard' })).toBeTruthy();
+    expect(await screen.findByText('ada')).toBeTruthy();
+    expect(screen.getByText('demo (you)').closest('tr')?.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('home shows the daily challenge card linking to the problem', async () => {
+    renderApp('#/');
+    fireEvent.click(await screen.findByRole('button', { name: "Solve today's challenge" }));
+    expect(await screen.findByRole('heading', { name: 'Two Sum', level: 1 })).toBeTruthy();
+  });
+});
+
 describe('ResultsPanel', () => {
   it('shows per-test rows with errors', () => {
     render(<ResultsPanel view={{ kind: 'submit', status: 'done', passed: 1, total: 2, results: [
