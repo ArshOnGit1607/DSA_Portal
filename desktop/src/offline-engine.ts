@@ -40,9 +40,7 @@ export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
   const pending = new Map<number, { resolve(r: ExecutionResult): void; reject(e: Error): void }>();
   function sandbox(): UtilityProcess {
     if (worker) return worker;
-    // GUI apps on macOS start with a minimal PATH; core's sandbox runs `node` from PATH (CR-018).
-    const PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter);
-    worker = utilityProcess.fork(path.join(__dirname, 'sandbox-worker.js'), [], { env: { PATH }, serviceName: 'dsa-sandbox' });
+    worker = utilityProcess.fork(path.join(__dirname, 'sandbox-worker.js'), [], { serviceName: 'dsa-sandbox' });
     worker.on('message', (m: { id: number; result?: ExecutionResult; error?: string }) => {
       const p = pending.get(m.id);
       pending.delete(m.id);
@@ -60,7 +58,8 @@ export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
     new Promise<ExecutionResult>((resolve, reject) => {
       const id = ++nextId;
       pending.set(id, { resolve, reject });
-      sandbox().postMessage({ id, problem, code });
+      // The app's own Electron binary runs each test as plain Node: no Node install needed (CR-018).
+      sandbox().postMessage({ id, problem, code, nodePath: process.execPath });
     });
 
   const get = (id: string) => {
