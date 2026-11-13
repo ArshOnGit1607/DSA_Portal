@@ -6,6 +6,7 @@ import type {
   PerTestResult,
 } from '@dsa-portal/core';
 import { pool, withTransaction } from '../pool';
+import { updateStatsOnSubmission } from '../../modules/stats/stats.service';
 
 interface SubmissionRow {
   id: string;
@@ -87,27 +88,8 @@ export class PostgresSubmissionRepository implements SubmissionRepository {
         submission.idempotencyKey ?? null,
       ]);
 
-      // If submission is judged, update user_problem_stats
-      if (submission.status === 'judged') {
-        const isSolved = passed === total && total > 0;
-        const statsUpsertSql = `
-          INSERT INTO user_problem_stats (user_id, problem_id, attempts, solved, first_solved_at, last_attempted_at)
-          VALUES (
-            $1::uuid,
-            $2::uuid,
-            1,
-            $3,
-            CASE WHEN $3 THEN now() ELSE NULL END,
-            now()
-          )
-          ON CONFLICT (user_id, problem_id) DO UPDATE SET
-            attempts = user_problem_stats.attempts + 1,
-            solved = user_problem_stats.solved OR EXCLUDED.solved,
-            first_solved_at = COALESCE(user_problem_stats.first_solved_at, EXCLUDED.first_solved_at),
-            last_attempted_at = now();
-        `;
-        await client.query(statsUpsertSql, [submission.userId, problemUuid, isSolved]);
-      }
+      // Stats counters in the same transaction as the result (CR-017: one owner for the stats SQL).
+      await updateStatsOnSubmission(client, submission);
     });
   }
 

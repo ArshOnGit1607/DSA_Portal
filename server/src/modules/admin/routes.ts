@@ -7,7 +7,6 @@ import { HttpError, notFound } from '../../lib/http';
 import { toApiProblem } from '../problems/routes';
 import { authorize } from '../auth/hooks';
 import type { AuthStore } from '../auth/store';
-import { pool } from '../../db/pool';
 
 // API test cases carry JSON strings (spec `TestCase`); core stores the parsed values.
 const ApiTestCase = z.object({ input: z.string(), expected: z.string() });
@@ -49,20 +48,12 @@ function toCoreFields(body: Partial<z.infer<typeof ProblemFields>>): Partial<Pro
 export const slugify = (title: string) =>
   title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 
-/** Soft delete: hides the problem from lists but keeps submissions and stats that point at it. */
-export async function unpublishProblem(id: string): Promise<boolean> {
-  const res = await pool.query('UPDATE problems SET is_published = false WHERE slug = $1 OR id::text = $1', [id]);
-  return (res.rowCount ?? 0) > 0;
-}
-
 export interface AdminRouteOptions {
   auth: AuthStore;
   problems: ProblemRepository;
-  /** ProblemRepository has no delete (CR-015); the server passes `unpublishProblem`. */
-  deleteProblem: (id: string) => Promise<boolean>;
 }
 
-export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, { auth, problems, deleteProblem }) => {
+export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, { auth, problems }) => {
   const guard = { onRequest: app.authenticate, preHandler: authorize(auth, 'admin') };
 
   app.post('/admin/problems', guard, async (req, reply) => {
@@ -87,7 +78,7 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, { 
 
   app.delete('/admin/problems', guard, async (req, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.query);
-    if (!(await deleteProblem(id))) throw notFound('Problem');
+    if (!(await problems.delete(id))) throw notFound('Problem'); // soft delete (CR-015)
     return reply.code(204).send();
   });
 

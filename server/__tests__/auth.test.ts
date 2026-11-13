@@ -60,15 +60,15 @@ describe('auth API', () => {
     expect((await refresh(second)).statusCode).toBe(200);
   });
 
-  it('detects reuse of a rotated token and revokes every session of that user', async () => {
+  it('detects reuse of a rotated token and revokes that login family only (CR-014)', async () => {
     const stolen = cookieOf(await login());
-    const otherDevice = cookieOf(await login());
+    const otherDevice = cookieOf(await login()); // a separate login = a separate family
     const legit = cookieOf(await refresh(stolen));
     const replay = await refresh(stolen); // attacker replays the old token
     expect(replay.statusCode).toBe(401);
     expect(String(replay.headers['set-cookie'])).toMatch(/^refresh_token=; Max-Age=0/);
-    expect((await refresh(legit)).statusCode).toBe(401);
-    expect((await refresh(otherDevice)).statusCode).toBe(401);
+    expect((await refresh(legit)).statusCode).toBe(401); // the whole stolen family is dead
+    expect((await refresh(otherDevice)).statusCode).toBe(200); // other devices stay signed in
   });
 
   it('only one of two concurrent refreshes with the same token wins', async () => {
@@ -132,8 +132,7 @@ describe('password policy', () => {
 
 describe('admin API', () => {
   const auth = new InMemoryAuthStore();
-  const deleted: string[] = [];
-  const { app, call, problems } = buildPerson3App({ auth, deleteProblem: async (id) => (await problems.findById(id)) !== null && deleted.push(id) > 0 });
+  const { app, call, problems } = buildPerson3App({ auth });
   let admin: Record<string, string>;
   let user: Record<string, string>;
   const newProblem = {
@@ -204,7 +203,7 @@ describe('admin API', () => {
 
   it('deletes (204) and 404s on unknown ids', async () => {
     expect((await call('DELETE', '/admin/problems', { query: { id: 'sum-of-two' }, headers: admin })).statusCode).toBe(204);
-    expect(deleted).toEqual(['sum-of-two']);
+    expect(await problems.findById('sum-of-two')).toBeNull();
     expect((await call('DELETE', '/admin/problems', { query: { id: 'nope' }, headers: admin })).statusCode).toBe(404);
   });
 });

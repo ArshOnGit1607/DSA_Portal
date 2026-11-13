@@ -22,6 +22,10 @@ import { adminRoutes } from './modules/admin/routes';
 import { statsRoutes } from './modules/stats/routes';
 import { InMemoryStatsRepository } from './modules/stats/in-memory-stats.repository';
 import type { StatsStore } from './modules/stats/stats.service';
+import { Cache } from './cache/cache';
+import { CachedProblemRepository } from './cache/cached-problem.repository';
+import { emptyLeaderboard, leaderboardRoutes, type LeaderboardStore } from './modules/leaderboard/routes';
+import { dailyRoutes, noPinnedDaily, type DailyStore } from './modules/daily/routes';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -44,9 +48,11 @@ export interface AppOptions {
   /** Users, sessions and roles (Person 3). */
   auth?: AuthStore;
   stats?: StatsStore;
-  /** Admin DELETE /admin/problems; the server passes unpublishProblem until ProblemRepository has delete (CR-015). */
-  deleteProblem?: (id: string) => Promise<boolean>;
   throttle?: LoginThrottle;
+  /** Redis cache-aside for public data (Person 3, Day 7). Omitted = no cache. */
+  cache?: Cache;
+  leaderboard?: LeaderboardStore;
+  daily?: DailyStore;
   backpressure?: Partial<Backpressure>;
 }
 
@@ -67,15 +73,18 @@ export function buildApp(opts: AppOptions = {}) {
   if (!opts.queue && !(submissions instanceof InMemorySubmissionRepository)) {
     throw new Error('Pass a queue (PostgresSubmissionQueue) together with a non-memory submission repository');
   }
-  const problems = opts.problems ?? new InMemoryProblemRepository();
+  const cache = opts.cache ?? new Cache(null);
+  const problems = new CachedProblemRepository(opts.problems ?? new InMemoryProblemRepository(), cache);
   const deps = {
     problems,
     submissions,
     queue: opts.queue ?? new InMemorySubmissionQueue(submissions as InMemorySubmissionRepository),
     auth: opts.auth ?? new InMemoryAuthStore(),
     stats: opts.stats ?? new InMemoryStatsRepository(problems, submissions),
-    deleteProblem: opts.deleteProblem ?? (async () => false),
     throttle: opts.throttle,
+    cache,
+    leaderboard: opts.leaderboard ?? emptyLeaderboard,
+    daily: opts.daily ?? noPinnedDaily,
     backpressure: {
       maxWaiting: Number(process.env.QUEUE_MAX_WAITING) || 500,
       retryAfterS: Number(process.env.QUEUE_RETRY_AFTER_S) || 10,
@@ -128,6 +137,9 @@ export function buildApp(opts: AppOptions = {}) {
     });
   });
 
+  // Prometheus scrape target for the cache counters (outside /api/v1: not part of the public API).
+  app.get('/metrics', async (_req, reply) => reply.type('text/plain; version=0.0.4').send(cache.renderMetrics()));
+
   app.register(
     async (api) => {
       api.get('/health', async () => ({ status: 'ok', service: 'dsa-portal-server' }));
@@ -139,6 +151,8 @@ export function buildApp(opts: AppOptions = {}) {
       await api.register(authRoutes, deps);
       await api.register(adminRoutes, deps);
       await api.register(statsRoutes, deps);
+      await api.register(leaderboardRoutes, deps);
+      await api.register(dailyRoutes, deps);
     },
     { prefix: '/api/v1' }
   );

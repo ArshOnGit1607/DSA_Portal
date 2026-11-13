@@ -4,7 +4,11 @@ import { PostgresProblemRepository, PostgresSubmissionRepository } from './db/re
 import { PostgresAuthStore } from './modules/auth/store';
 import { PostgresSubmissionQueue } from './modules/submissions/queue';
 import { PostgresStatsStore } from './modules/stats/stats.service';
-import { unpublishProblem } from './modules/admin/routes';
+import { cacheFromEnv } from './cache/cache';
+import { PostgresLeaderboard } from './modules/leaderboard/routes';
+import { PostgresDailyStore } from './modules/daily/routes';
+
+const cache = cacheFromEnv(); // REDIS_URL unset = no cache
 
 const app = buildApp({
   problems: new PostgresProblemRepository(),
@@ -12,9 +16,12 @@ const app = buildApp({
   queue: new PostgresSubmissionQueue(),
   auth: new PostgresAuthStore(),
   stats: new PostgresStatsStore(),
-  deleteProblem: unpublishProblem,
+  cache,
+  leaderboard: new PostgresLeaderboard(),
+  daily: new PostgresDailyStore(),
 });
 app.addHook('onClose', closePool);
+app.addHook('onClose', () => cache.close());
 
 const port = Number(process.env.PORT || 3000);
 const host = '0.0.0.0';

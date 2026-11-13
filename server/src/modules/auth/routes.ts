@@ -56,10 +56,11 @@ export interface AuthRouteOptions {
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, { auth, throttle = new LoginThrottle() }) => {
   const signAccess = (userId: string) => app.jwt.sign({ sub: userId }, { expiresIn: ACCESS_TTL_S });
 
-  async function startSession(req: FastifyRequest, reply: FastifyReply, userId: string) {
+  async function startSession(req: FastifyRequest, reply: FastifyReply, userId: string, familyId?: string) {
     const refreshToken = randomBytes(32).toString('base64url');
     await auth.createSession({
       userId,
+      familyId,
       tokenHash: sha256(refreshToken),
       expiresAt: new Date(Date.now() + REFRESH_TTL_S * 1000),
       ip: req.ip,
@@ -103,20 +104,21 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, { au
     return { accessToken: signAccess(user.id), refreshToken, expiresIn: ACCESS_TTL_S };
   });
 
-  // Rotation: every refresh uses up the old token and sets a new cookie. Presenting a used token
-  // again means two parties hold it (theft), so all of that user's sessions are revoked.
+  // Rotation: every refresh uses up the old token and sets a new one in the same login family.
+  // Presenting a used token again means two parties hold it (theft), so that family is revoked;
+  // the user's other devices (other families) stay signed in.
   app.post('/auth/refresh', async (req, reply) => {
     const token = readRefreshCookie(req);
     if (!token) throw unauthorized('Missing refresh token');
     const result = await auth.consumeSession(sha256(token));
     if (result.status === 'reused') {
-      req.log.warn({ userId: result.userId }, 'refresh token reuse detected; all sessions revoked');
+      req.log.warn({ userId: result.userId }, 'refresh token reuse detected; session family revoked');
     }
     if (result.status !== 'ok') {
       setRefreshCookie(reply, '', 0);
       throw unauthorized('Refresh token is invalid or expired');
     }
-    await startSession(req, reply, result.userId);
+    await startSession(req, reply, result.userId, result.familyId);
     return { accessToken: signAccess(result.userId) };
   });
 

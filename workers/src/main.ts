@@ -4,19 +4,23 @@ import {
   PostgresProblemRepository,
   PostgresSubmissionRepository,
 } from '@dsa-portal/server/dist/db/repositories';
-import { statsServiceStub } from './judge';
+import { cacheFromEnv } from '@dsa-portal/server/dist/cache/cache';
+import type { StatsService } from './judge';
 import { serveMetrics } from './metrics';
 import { DEFAULT_QUEUE_CONFIG, startWorker } from './pg-queue';
 
 const intEnv = (name: string, fallback: number, min: number) => Math.max(min, Number(process.env[name]) || fallback);
 
 async function main() {
+  // A judged submission can change the leaderboard: start a new cache generation (Person 3, Day 7).
+  const cache = cacheFromEnv();
+  const stats: StatsService = { onSubmissionJudged: () => cache.bumpGeneration('leaderboard') };
   const worker = await startWorker({
     pool,
     deps: {
       problems: new PostgresProblemRepository(),
       submissions: new PostgresSubmissionRepository(),
-      stats: statsServiceStub,
+      stats,
     },
     concurrency: intEnv('WORKER_CONCURRENCY', 2, 1),
     pollMs: intEnv('WORKER_POLL_MS', 2000, 100),
@@ -38,6 +42,7 @@ async function main() {
     metricsServer?.close();
     await worker.stop();
     await closePool();
+    await cache.close();
     process.exit(0);
   };
   process.once('SIGTERM', () => void shutdown('SIGTERM'));

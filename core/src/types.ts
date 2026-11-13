@@ -82,6 +82,8 @@ export interface ProblemRepository {
   findById(id: string): Promise<Problem | null>;
   findAll(filters?: { topic?: Topic; difficulty?: Difficulty }): Promise<Problem[]>;
   save(problem: Problem): Promise<void>;
+  /** Soft delete (unpublish): hidden from lists, kept for existing submissions and stats. False if unknown. */
+  delete(id: string): Promise<boolean>;
 }
 
 export interface SubmissionRepository {
