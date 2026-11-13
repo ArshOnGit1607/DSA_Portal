@@ -8,14 +8,13 @@
 - Phones and tablets: description and editor side by side at ≥ 768 pt wide; `KeyboardAvoidingView`, `keyboardShouldPersistTaps`, 44–48 pt touch targets, screen-reader labels on every control.
 - Code runs on the server only; the app submits with an Idempotency-Key and polls until judged (ui-core submission store). Sockets arrive Day 7.
 - Fixes in shared code found on mobile: `ui-core` used `URLSearchParams.set`, which React Native doesn't implement (now `append`).
-- `server/src/modules/auth/dev-server.ts`: TEMP server with Person 3's routes wired in (as CR-010 proposes) on PostgreSQL, so clients can run end to end until CR-010 lands.
 
 ## How to run
 ```bash
 npm test -w mobile                      # 14 tests (jest-expo): screens on a fake API, editor helpers, SQLite cache, offline fallback
 
 # API + worker (PostgreSQL, migrated + seeded)
-DATABASE_URL=postgresql://postgres@localhost:5432/dsa_portal PORT=3100 npx tsx server/src/modules/auth/dev-server.ts
+DATABASE_URL=postgresql://postgres@localhost:5432/dsa_portal PORT=3100 npm run dev:server   # auth/admin/stats wired since CR-010
 npm run build -w workers && DATABASE_URL=postgresql://postgres@localhost:5432/dsa_portal node workers/dist/main.js
 
 # App (see mobile/.env.example for the API URL per device)
@@ -35,7 +34,6 @@ Same as Day 4 (`docs/handover/day-4-person-3.md`); the mobile stats screen uses 
 2. No syntax highlighting in the mobile editor (see the decision note).
 3. Offline: only problems opened before are readable; submitting and stats need the server.
 4. Settings (theme) follow the system and aren't persisted on mobile yet.
-5. The TEMP `dev-server.ts` should be deleted once CR-010 is applied.
 
 ## Design decisions (viva)
 - **Expo SDK 51:** the newest SDK on React 18.2, the version `/ui-core` and the web app use; newer SDKs need React 19, which would put two Reacts in one bundle.
