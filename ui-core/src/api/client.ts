@@ -62,7 +62,7 @@ export function createApiClient(cfg: ApiClientConfig) {
 
   function url(path: string, query?: RequestOptions['query']) {
     const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined) qs.set(k, String(v));
+    for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined) qs.append(k, String(v)); // append, not set: React Native's URLSearchParams has no set()
     const s = qs.toString();
     return `${cfg.baseUrl}${path}${s ? `?${s}` : ''}`;
   }
