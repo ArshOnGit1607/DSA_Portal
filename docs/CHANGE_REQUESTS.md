@@ -197,3 +197,57 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Also:** there is no Socket.IO server yet. The clients (`createRealtime` in ui-core, used by web, desktop and mobile) connect to the API origin and fall back to polling while it is missing, so nothing breaks until Person 1 adds it.
 - **Status:** pending
 - **Approved by:** —
+
+## CR-023
+- **Proposed by:** Person 3 (Day 8), **for Person 2** (`/core/src/sync`, `/server/src/sync`, `/core/src/storage`)
+- **Field:** client `SyncEngine` and `POST /api/v1/sync/push` / `GET /api/v1/sync/pull` (in openapi.yaml, not implemented)
+- **Situation:** Day 8 asks the clients to "use Person 2's SyncEngine", but only the sync types and the HLC helpers exist in `core/src/sync`; there is no engine and no server sync routes.
+- **What the clients do meanwhile (no contract change, Person 3's folders only):** `ui-core/src/sync.ts` is a submission outbox. Offline submissions are stored on the device (localStorage on web/desktop, SQLite `kv` table on mobile) and replayed through the existing `POST /api/v1/submissions` with the original `Idempotency-Key`, so a replay can never create a duplicate. The server judges again and its verdict counts; a desktop offline verdict that differs is shown as a conflict.
+- **Proposed change:** when the SyncEngine exists, expose `{ status, pendingCount, queue, syncNow(), subscribe() }` (the shape of `SyncState` in `ui-core/src/sync.ts`) so the client UI can switch to it with no screen changes; push submissions as `SyncOperation { entity: 'submission', opId: <Idempotency-Key> }`. The desktop's local `solved` list (`offline-progress.json`) can then move into the SQLite storage.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-024
+- **Proposed by:** Person 3 (Day 9), **for Person 2** (`/.github`)
+- **Field:** CI: client test jobs (there is no `.github/workflows` yet)
+- **Proposed change:** add `.github/workflows/clients.yml`; everything it runs lives in Person 3's folders and passes locally:
+  ```yaml
+  name: clients
+  on: [push, pull_request]
+  jobs:
+    unit:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: npm test -w ui-core && npm test -w web && npm test -w mobile
+    web-e2e:
+      runs-on: ubuntu-latest        # Google Chrome is preinstalled (web/playwright.config.ts uses channel 'chrome')
+      env: { CI: '1' }
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: npm run test:e2e -w web
+        - uses: actions/upload-artifact@v4
+          if: failure()
+          with: { name: web-e2e-traces, path: web/test-results }
+    desktop-e2e:
+      runs-on: ubuntu-latest
+      env: { CI: '1' }
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: xvfb-run -a npm run test:e2e:ci -w desktop   # Electron needs a display
+        - uses: actions/upload-artifact@v4
+          if: failure()
+          with: { name: desktop-e2e-traces, path: desktop/test-results }
+  ```
+- **Reason:** Day 9 asks for the Electron smoke test "in CI-friendly form"; the tests are ready (CI mode: one retry, GitHub annotations, `--no-sandbox` for the runner), the workflow file is Person 2's.
+- **Status:** pending
+- **Approved by:** —
