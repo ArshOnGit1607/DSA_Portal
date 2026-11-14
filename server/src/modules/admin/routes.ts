@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { validateProblem } from '@dsa-portal/core';
 import type { Problem, ProblemRepository, TestCase } from '@dsa-portal/core';
 import { HttpError, notFound } from '../../lib/http';
+import { pool } from '../../db/pool';
 // validateProblem (core zod schema) throws ZodError → the central handler answers 400 VALIDATION_ERROR.
 import { toApiProblem } from '../problems/routes';
 import { authorize } from '../auth/hooks';
@@ -47,6 +48,15 @@ function toCoreFields(body: Partial<z.infer<typeof ProblemFields>>): Partial<Pro
 
 export const slugify = (title: string) =>
   title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+
+/**
+ * Soft delete by slug or id. Still exported because server/src/index.ts (Person 1's) passes it as
+ * `deleteProblem`; the admin route itself uses ProblemRepository.delete (CR-015), which does the same.
+ */
+export async function unpublishProblem(id: string): Promise<boolean> {
+  const res = await pool.query('UPDATE problems SET is_published = false WHERE slug = $1 OR id::text = $1', [id]);
+  return (res.rowCount ?? 0) > 0;
+}
 
 export interface AdminRouteOptions {
   auth: AuthStore;

@@ -54,7 +54,8 @@ async function main() {
   const repos = await import('../../server/src/db/repositories');
   const { buildApp } = await import('../../server/src/app');
   const { PostgresSubmissionQueue } = await import('../../server/src/modules/submissions/queue');
-  const { PROBLEMS } = await import('@dsa-portal/core');
+  // The seeded two-sum (5 tests), as in a real database; core's bundled copy has only 3.
+    const { SEED_PROBLEMS: PROBLEMS } = await import('../../server/src/db/seeds/problems-data');
 
   const workers: ChildProcess[] = [];
   let app: ReturnType<typeof buildApp> | undefined;
@@ -68,7 +69,8 @@ async function main() {
     const problems = new repos.PostgresProblemRepository();
     if (!(await problems.findById('two-sum'))) await problems.save(PROBLEMS.find((p) => p.id === 'two-sum')!);
 
-    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue() });
+    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue(), leaderboard: new (await import('../../server/src/modules/leaderboard/store')).PostgresLeaderboardStore(),
+      quota: { perMinute: 1e6, perDay: 1e6 }, rateLimit: { perIp: 1e6, perUser: 1e6 } }); // tests the queue, not the Day 8 limits
     await app.ready();
     const auth = { authorization: `Bearer ${app.jwt.sign({ sub: USER_ID })}` };
 

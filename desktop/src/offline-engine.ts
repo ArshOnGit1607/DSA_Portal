@@ -10,7 +10,7 @@ import { SEED_PROBLEMS } from '../../server/src/db/seeds/problems-data';
  * The offline half of the desktop app: /core picks problems and gives hints, core's sandbox judges
  * in a utility process. Problems are the 40 seed problems bundled into the app.
  * Offline submissions reach the server through the renderer's sync outbox (ui-core/src/sync.ts).
- * shortcut: solved ids live in a JSON file in userData until Person 2's SQLite storage exists (CR-023).
+ * shortcut: solved ids live in a JSON file in userData until Person 2's SQLite storage exists (CR-030).
  */
 export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
   const byId = new Map(problems.map((p) => [p.id, p]));

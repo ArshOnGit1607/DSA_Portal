@@ -123,7 +123,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `sessions` table
 - **Proposed change:** add `revoked_at TIMESTAMPTZ NULL` and `family_id UUID NOT NULL` (one family per login).
 - **Reason:** refresh rotation with reuse detection is implemented today without a schema change: a rotated session keeps its row with `expires_at = 'epoch'`, and presenting it again revokes all of the user's sessions. That works, but (1) a cleanup job deleting expired rows also forgets rotated ones, and (2) reuse revokes *every* device instead of only the stolen family. With the two columns, `PostgresAuthStore.consumeSession` changes in one place.
-- **Status:** done by Person 3 (Day 7) with the user's approval: migration `004_session_families` (family_id + revoked_at, old epoch rows backfilled), `PostgresAuthStore`/`InMemoryAuthStore` use them; reuse now revokes only the stolen family. Needs Person 2's review
+- **Status:** done by Person 3 (Day 7) with the user's approval: migration `004_session_families`, renumbered `006_session_families` in the merge with `main` (CR-022) (family_id + revoked_at, old epoch rows backfilled), `PostgresAuthStore`/`InMemoryAuthStore` use them; reuse now revokes only the stolen family. Needs Person 2's review
 - **Approved by:** —
 
 ## CR-015
@@ -179,6 +179,110 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Approved by:** —
 
 ## CR-021
+- **Proposed by:** Person 1 (Day 7), **for the team** (stack decision) and **Person 2** (migration in `/server/src/db`)
+- **Proposed change:** Day 7 without Redis or BullMQ, continuing CR-005:
+  1. **Socket.IO fan-out over PostgreSQL `LISTEN/NOTIFY`, not Redis pub/sub + the Socket.IO Redis adapter.** Triggers (migration `005_realtime_events`, up + down, checked both ways) `pg_notify('dsa_events', …)` on every submission status change, on a fully passing submission (`leaderboard:updated`) and on a new `daily_challenges` row (`daily:new`). Each API instance LISTENs and emits to its own sockets, so several instances work. Also adds a partial index for the leaderboard on `user_problem_stats (first_solved_at) WHERE solved`. No existing column changed.
+  2. **Daily challenge without a BullMQ repeatable job:** a deterministic pick (sha256 of the UTC date over the sorted published slugs), saved in the existing `daily_challenges` table by the worker just after each UTC midnight (and lazily by `GET /daily-challenge`). The insert announces it, so it fires once even with many workers.
+  3. **Spec (additive):** `GET /leaderboard` gets `period=week|all` (default `all`) and a 400. Ranking is by problems solved, then the time the user reached that count (earlier wins), then user id. `totalScore` = Easy 1, Medium 2, Hard 3 per solved problem. `GET /daily-challenge` documents its 401. `docs/websocket-events.md` is rewritten with the Day 7 brief's event names; Person 3's unmerged client (fork) still uses the Day 1 draft names and must switch.
+- **Trade-off:** NOTIFY payloads are capped at 8 KB and aren't replayed to disconnected clients. Clients keep REST polling as the fallback. If we ever need Redis (Person 3's caching), we can swap the event source behind the same `EventSource` interface without touching clients.
+- **Status:** done, needs team sign-off and Person 2's review of migration 005
+- **Approved by:** —
+
+## CR-022
+- **Proposed by:** Person 1 (Day 7), **for Person 3**
+- **Context:** Person 3's fork (`ansarimehran24/DSA_Portal`, commit `b2e822a` and its siblings, not merged) adds its own `server/src/modules/{leaderboard,daily}/routes.ts` and edits `server/src/app.ts`, `server/src/index.ts` and `workers/src/main.ts`, which are Person 1's files. Person 1's Day 7 implementation of the same endpoints and of the socket gateway is now on `main` (CR-021).
+- **Proposed change (before Person 3 merges their Day 7):**
+  1. Drop the fork's `modules/leaderboard/routes.ts` and `modules/daily/routes.ts`. Use `main`'s (keyset pagination, `period=week|all`, daily saved per UTC day and announced with `daily:new`).
+  2. Keep the Redis cache, but as a wrapper: a `CachedLeaderboardStore implements LeaderboardStore` around `PostgresLeaderboardStore` (key `period`) and a `CachedDailyChallengeStore implements DailyChallengeStore` (key: date). Pass them through `buildApp({ leaderboard, daily })`. Invalidate on the `leaderboard:updated` / `daily:new` events or keep the short TTLs. Person 1 will wire `cache` into `app.ts`/`index.ts` once it's on `main`. Send the wiring as a CR like CR-010, not an edit.
+  3. `ui-core/src/realtime.ts`: connect with `io(url, { auth: { token } })` instead of emitting `auth:join`; listen for `submission:queued|running|finished` (payload `{ submissionId, problemId, status, passed, total }`; fetch per-test results over REST) and `leaderboard:updated` / `daily:new`. See `/docs/websocket-events.md`.
+  4. Rename `004_session_families` to `006_session_families` (`004` and `005` are taken on `main`).
+  5. `/metrics`: the worker already serves Prometheus on `WORKER_METRICS_PORT`. Put the API's cache counters there or at `GET /metrics` on the API, but agree the name with Person 2 so one scrape config covers both.
+- **Status:** done by Person 3 in the merge with `main`: 1 (fork routes and wiring dropped), 2 (wrappers `CachedLeaderboardStore` / `CachedDailyChallengeStore`; wiring sent as CR-032), 3 (`realtime.ts` on the new events), 4 (`006_session_families`, made idempotent so a database that ran the fork's 004 applies it safely). 5 proposed in CR-032. Needs Person 1's review
+- **Approved by:** —
+
+## CR-023
+- **Proposed by:** Person 1 (Day 8), **for Person 2 and Person 3** (FYI: additive API behaviour + server dependency upgrade)
+- **Changes already made (Person 1's files):**
+  1. **New 4xx responses, same `Error` body:** any route may return `429 RATE_LIMITED` (per IP 300/min, per signed-in user 120/min) and `413 PAYLOAD_TOO_LARGE` (body > 512 KiB). `POST /submissions` may return `429 QUOTA_EXCEEDED` (per user 10/min, 500/day). Every 429 has `Retry-After`. Code with a NUL character is now a `400 VALIDATION_ERROR` (was a 500 from PostgreSQL). Documented in `openapi.yaml`. No endpoint, field or event changed.
+  2. **Security headers** on every response (`nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, HSTS, `CSP: default-src 'none'`), and a **CORS allow-list** (`CORS_ORIGINS`) shared with Socket.IO. In production with `CORS_ORIGINS` unset, browsers on other origins are refused. **Person 3:** add the web app's origin, and the desktop renderer's if it calls the API from the renderer. Native mobile and the CLI send no `Origin` and are unaffected.
+  3. **Fastify 4 → 5** (`fastify` 5.12.8, `@fastify/jwt` 10.2.7, `@fastify/cors` 11.4.3) to fix the `npm audit` criticals (see `docs/threat-model.md`). Person 3's auth/admin/stats modules compile and pass their tests unchanged. `light-my-request` (used by `app.inject` in tests) is pinned to 6.6.0 as a server devDependency, because 6.8 pulls the ESM-only `cookie@2`, which Jest (CommonJS) can't load.
+  4. Each submission writes an `audit_log` row (`action = 'submission.create'`) through Person 2's `PostgresAuditRepository`.
+- **Clients (Person 3):** on 429, read `error` and wait `Retry-After`. `QUOTA_EXCEEDED` deserves its own message ("you've hit the submission limit, try again in N s").
+- **Status:** done, FYI
+- **Approved by:** —
+
+## CR-024
+- **Proposed by:** Person 1 (Day 8), **for Person 2** (owner of `/infra` and docker files)
+- **Proposed change:** run the worker with reduced privileges and hard resource limits. There's no worker image yet; when you add the API and worker services to `infra/docker-compose.yml`, please use this for the worker:
+  ```yaml
+  worker:
+    build: { context: .., dockerfile: infra/Dockerfile.worker }   # FROM node:20-alpine … USER node
+    command: node workers/dist/main.js
+    user: "node"                 # never root
+    read_only: true              # sandbox writes only to /tmp
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128              # WORKER_CONCURRENCY × 1 child + headroom; stops fork bombs at the kernel
+    mem_limit: 512m              # children are capped at 64 MB each by --max-old-space-size
+    cpus: "1.0"
+    environment: [DATABASE_URL, WORKER_CONCURRENCY, WORKER_METRICS_PORT]   # NOT JWT_SECRET: the worker doesn't need it
+  ```
+  Inside it, each sandbox child already runs under Node's permission model (no fs writes, reads only its own temp dir, no child processes or worker threads) with a 64 MB heap, a 2 s per-test timeout and an env with only `PATH`.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-025
+- **Proposed by:** Person 1 (Day 8), **for Person 3** (owner of `/web`, `/mobile`)
+- **Context:** after Day 8's server fixes, the remaining `npm audit --omit=dev` findings (50: 1 critical, 21 high) are all in client toolchains, except zod (mitigated by the 512 KiB body limit). Full table in `docs/threat-model.md`.
+- **Proposed change:**
+  1. Mobile: plan the Expo SDK upgrade (51 → current) after the demo. It clears `tar` (critical), `@xmldom/xmldom`, `postcss`, `@expo/*`, `expo-router`, `@react-navigation/*` and the RN CLI findings. These are build-time tools, so there's no runtime risk for the demo.
+  2. Web: React Router 6 → 7 clears `react-router`, `@remix-run/*` and `turbo-stream`. The SPA doesn't use the SSR paths those advisories are about.
+  3. Test hygiene: `server/__tests__/person3-postgres.test.ts` › "keeps stats counters right under concurrent submissions" fails when run on its own against a fresh DB, because it needs the `two-sum` problem, which only `workers/__tests__/queue.e2e.test.ts` seeds. Seed it in that test's `beforeAll` (insert `two-sum` `ON CONFLICT DO NOTHING`).
+- **Status:** pending
+- **Approved by:** —
+
+## CR-026
+- **Proposed by:** Person 1 (Day 9), **for Person 2** (owner of `/.github`)
+- **Proposed change:** add CI so the Day 9 full-flow test (`workers/__tests__/full-flow.e2e.test.ts`) and every other suite run on each push and PR. Ready-to-use `.github/workflows/ci.yml`:
+  ```yaml
+  name: ci
+  on: [push, pull_request]
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      services:
+        postgres:
+          image: postgres:16-alpine
+          env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: dsa_portal_test }
+          ports: ["5432:5432"]
+          options: >-
+            --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      env:
+        TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dsa_portal_test
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: npm run build
+        - run: npx jest --runInBand   # runInBand: suites share one database (parallel migrateUp on an empty DB races)
+        - run: npm test -w ui-core && npm test -w web && npm test -w mobile
+  ```
+  The full-flow test builds and starts the real API and worker itself. It needs no Redis (CR-021).
+- **Status:** pending
+- **Approved by:** —
+
+## CR-027
+- **Proposed by:** Person 1 (Day 9), **for Person 2** (owner of `server/src/db/seed.ts`)
+- **Problem:** the seeded `admin@dsa.portal` and `student@dsa.portal` can't log in. The hash in `seed.ts` (comment: "bcrypt hash for password123") doesn't match `password123`. `bcrypt.compare('password123', <hash>)` returns `false`.
+- **Proposed change:** replace it with a real hash, e.g. the output of `node -e "require('bcryptjs').hash('password123', 10).then(console.log)"`, and add a seed test that `compare`s it.
+- **Status:** pending
+- **Approved by:** —
+
+> CR-028 to CR-031 were Person 3's CR-021 to CR-024 on the fork; renumbered in the merge with `main` because Person 1 used those numbers (same convention as CR-019/CR-020).
+
+## CR-028
 - **Proposed by:** Person 3 (Day 7), **for Person 1** (owner of `/server/src/modules/{leaderboard,daily}`, `app.ts`, `index.ts`, `/workers`)
 - **Field:** `GET /api/v1/leaderboard`, `GET /api/v1/daily-challenge` (already in openapi.yaml), `GET /metrics`
 - **Change already made (user's approval; Day 7 caching and clients needed them):**
@@ -186,19 +290,19 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
   2. `modules/daily/routes.ts`: the admin-pinned problem for today's UTC date (`daily_challenges`), else a stable rotation through published problems by day number (no cron needed), cached 300 s. 404 only when there are no problems.
   3. `app.ts`: `AppOptions.cache/leaderboard/daily`; problems are wrapped in `CachedProblemRepository`; `GET /metrics` (cache counters, Prometheus text). `index.ts`: `cacheFromEnv()`, Postgres stores. Contract cases added for both routes.
   4. `workers/src/main.ts`: the stats hook bumps the leaderboard cache generation after each judged submission.
-- **Status:** done, needs Person 1's review
+- **Status:** superseded by CR-021/CR-022 (Person 1): in the merge with `main` the fork's leaderboard/daily routes and their `app.ts`/`index.ts`/`workers` wiring were dropped for Person 1's; the Redis cache now wraps Person 1's stores (CR-032)
 - **Approved by:** the user (Person 3's session, Day 7)
 
-## CR-022
+## CR-029
 - **Proposed by:** Person 3 (Day 7), **for Person 1** (`/docs/websocket-events.md`, realtime module)
 - **Field:** WebSocket event `submission:result`
 - **Proposed change:** add `submissionId` and `status` (`judged`/`failed`) to the payload, and emit it to the submitting user's room after `auth:join`.
 - **Reason:** without `submissionId` a client with two submissions on the same problem can't tell which one finished. The ui-core client already prefers `submissionId` and falls back to `problemId`, then re-reads the submission over REST, so it is safe either way.
 - **Also:** there is no Socket.IO server yet. The clients (`createRealtime` in ui-core, used by web, desktop and mobile) connect to the API origin and fall back to polling while it is missing, so nothing breaks until Person 1 adds it.
-- **Status:** pending
+- **Status:** withdrawn: Person 1's events (`submission:queued|running|finished`) already carry `submissionId`; the client was switched to them in the merge (CR-022 item 3)
 - **Approved by:** —
 
-## CR-023
+## CR-030
 - **Proposed by:** Person 3 (Day 8), **for Person 2** (`/core/src/sync`, `/server/src/sync`, `/core/src/storage`)
 - **Field:** client `SyncEngine` and `POST /api/v1/sync/push` / `GET /api/v1/sync/pull` (in openapi.yaml, not implemented)
 - **Situation:** Day 8 asks the clients to "use Person 2's SyncEngine", but only the sync types and the HLC helpers exist in `core/src/sync`; there is no engine and no server sync routes.
@@ -207,7 +311,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Status:** pending
 - **Approved by:** —
 
-## CR-024
+## CR-031
 - **Proposed by:** Person 3 (Day 9), **for Person 2** (`/.github`)
 - **Field:** CI: client test jobs (there is no `.github/workflows` yet)
 - **Proposed change:** add `.github/workflows/clients.yml`; everything it runs lives in Person 3's folders and passes locally:
@@ -248,6 +352,20 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
           if: failure()
           with: { name: desktop-e2e-traces, path: desktop/test-results }
   ```
+- **Relation to CR-026:** CR-026 (Person 1) already runs the unit suites; this adds the two browser/Electron e2e jobs.
 - **Reason:** Day 9 asks for the Electron smoke test "in CI-friendly form"; the tests are ready (CI mode: one retry, GitHub annotations, `--no-sandbox` for the runner), the workflow file is Person 2's.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-032
+- **Proposed by:** Person 3 (merge with `main`), **for Person 1** (`server/src/app.ts`, `server/src/index.ts`, `workers/src/main.ts`), as asked in CR-022 item 2 ("send the wiring as a CR, not an edit")
+- **Field:** wiring of Person 3's Redis cache (`/server/src/cache`); no endpoint, column or event changes
+- **Proposed change:**
+  1. `index.ts`: `const cache = cacheFromEnv();` (REDIS_URL unset = pass-through) and
+     `buildApp({ …, problems: new CachedProblemRepository(new PostgresProblemRepository(), cache), leaderboard: new CachedLeaderboardStore(new PostgresLeaderboardStore(), cache), daily: new CachedDailyChallengeStore(new PostgresDailyChallengeStore(), cache) })`, plus `app.addHook('onClose', () => cache.close())`.
+     The wrappers live in `server/src/cache/{cached-problem.repository,cached-stores}.ts` and implement your interfaces unchanged (leaderboard keyed by period, 30 s; daily keyed by UTC date, 300 s; problems 300/600 s with admin invalidation).
+  2. Invalidation: on `leaderboard:updated` call `cache.bumpGeneration('leaderboard')` (in the API's event listener, or in `workers/src/main.ts` after a judged submission, as the fork did). Without it the board is at most 30 s stale.
+  3. `/metrics` (CR-022 item 5): `cache.renderMetrics()` returns Prometheus text (`dsa_cache_requests_total{result="hit|miss"}`, `dsa_cache_errors_total`). Proposal: serve it at `GET /metrics` on the API (outside `/api/v1`), next to the worker's `WORKER_METRICS_PORT` endpoint; Person 2 adds both targets to one scrape config.
+- **Tested:** `server/__tests__/cache.test.ts` runs your leaderboard and daily routes over the wrappers (cache hits, `period=week` keyed separately, Dates survive the JSON round trip, generation bump).
 - **Status:** pending
 - **Approved by:** —

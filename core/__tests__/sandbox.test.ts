@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
-import { submitCodeSandbox, submitCodeSandboxAsync } from '../src/sandbox';
+import { childCommand, submitCodeSandbox, submitCodeSandboxAsync } from '../src/sandbox';
+import { spawnSync } from 'child_process';
+import os from 'os';
 import { loadProblems } from '../src/problem-loader';
 
 import path from 'path';
@@ -263,4 +265,78 @@ describe('nodePath / extraEnv (CR-018: desktop runs the child with its own binar
     // With the override honoured it would run until the 5 s timeout; the 64 MB cap kills it first.
     expect(result.status).toBe('error');
   }, 60000);
+});
+
+describe('Node permission model on the child (Day 8: reduced privileges)', () => {
+  const opts = { perTestTimeoutMs: 2000, totalTimeoutMs: 30000, memoryLimitMb: 64, outputCap: 50000, nodePath: 'node', extraEnv: {} };
+  const code = path.join(os.tmpdir(), 'dsa-sandbox-x', 'code.js');
+
+  it('runs plain node with fs reads limited to the wrapper and the test dir', () => {
+    const { args } = childCommand(code, code.replace('code.js', 'input.json'), opts);
+    expect(args[0]).toBe('--experimental-permission');
+    expect(args.filter((a) => a.startsWith('--allow-fs-read='))).toEqual([
+      expect.stringMatching(/sandbox-exec\.js$/),
+      `--allow-fs-read=${path.dirname(code)}`,
+    ]);
+    expect(args.some((a) => /allow-(fs-write|child-process|worker)/.test(a))).toBe(false);
+  });
+
+  it('those flags really block reading other files and spawning processes', () => {
+    const { args } = childCommand(code, code, opts);
+    const flags = args.filter((a) => a.startsWith('--'));
+    for (const script of ['require("fs").readFileSync("/etc/hosts")', 'require("child_process").execSync("id")']) {
+      const r = spawnSync('node', [...flags, '-e', script], { encoding: 'utf8' });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/ERR_ACCESS_DENIED|restricted/);
+    }
+  });
+
+  it('leaves a custom binary (Electron, no permission model) without the flags', () => {
+    expect(childCommand(code, code, { ...opts, nodePath: '/x/electron' }).args[0]).toMatch(/sandbox-exec\.js$/);
+  });
+});
+
+describe('one child per submission (Day 9): a fresh context per test, failures stay per test', () => {
+  const opts = { perTestTimeoutMs: 1000, totalTimeoutMs: 10000 };
+  // Correct two-sum, except on the 2nd test case (nums [3,2,4]) where it misbehaves as given.
+  const breaksOnSecond = (bad: string) =>
+    `function solve({ nums, target }) { if (nums.length === 3) { ${bad} } const m = new Map(); for (let i = 0; i < nums.length; i++) { if (m.has(target - nums[i])) return [m.get(target - nums[i]), i]; m.set(nums[i], i); } }`;
+
+  it('gives every test a fresh global scope (nothing carries over between tests)', async () => {
+    const code = 'globalThis.calls = (globalThis.calls || 0) + 1; var seen = calls; function solve() { return seen; }';
+    const r = await submitCodeSandboxAsync(twoSum, code, opts);
+    expect(r.perTest.map((t) => t.actual)).toEqual([1, 1, 1]);
+  });
+
+  it('a timeout in one test does not stop the others', async () => {
+    const r = await submitCodeSandboxAsync(twoSum, breaksOnSecond('while (true) {}'), opts);
+    expect(r.status).toBe('timeout');
+    expect(r.perTest.map((t) => t.passed)).toEqual([true, false, true]);
+    expect(r.perTest[1].error).toBe('Test timed out after 1000ms');
+  });
+
+  it('a crash keeps earlier results, names the crashing test, and marks the rest not run', () => {
+    const r = submitCodeSandbox(twoSum, breaksOnSecond('const a = []; while (true) a.push(new Array(1e6).fill(1));'), { ...opts, memoryLimitMb: 32 });
+    expect(r.status).toBe('error');
+    expect(r.perTest[0].passed).toBe(true);
+    expect(r.perTest[1].error).toMatch(/out of memory/);
+    expect(r.perTest[2].error).toMatch(/^Not run/);
+  });
+
+  it('contains an endless chain of promise jobs (microtasks count against the timeout)', async () => {
+    const code = 'function solve() { (function f() { Promise.resolve().then(f); })(); return [0, 1]; }';
+    const r = await submitCodeSandboxAsync({ ...twoSum, testCases: twoSum.testCases.slice(0, 1) }, code, opts);
+    expect(r.status).toBe('timeout');
+  });
+
+  it('user code cannot replace the runner it can see on globalThis', async () => {
+    const code =
+      `for (const k of Object.getOwnPropertyNames(globalThis)) if (k.startsWith('__dsa_')) {` +
+      ` try { globalThis[k] = () => '{"status":"ok","result":[0,1]}'; } catch (e) {}` +
+      ` try { Object.defineProperty(globalThis, k, { value: () => 'x' }); } catch (e) {} }` +
+      ` function solve() { return [9, 9]; }`;
+    const r = await submitCodeSandboxAsync(twoSum, code, opts);
+    expect(r.status).toBe('failed');
+    expect(r.perTest.map((t) => t.actual)).toEqual([[9, 9], [9, 9], [9, 9]]);
+  });
 });

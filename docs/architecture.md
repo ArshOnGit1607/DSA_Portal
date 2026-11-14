@@ -58,7 +58,7 @@ sequenceDiagram
     participant API as API (Fastify)
     participant PG as PostgreSQL (submissions = queue)
     participant W as Worker process (@dsa-portal/workers)
-    participant S as Sandbox (node child_process + vm)
+    participant S as Sandbox (one node child per submission, fresh vm context per test)
 
     C->>API: POST /api/v1/submissions {problemId, code} + Idempotency-Key?
     API->>PG: key already used by this user? → return that submission
@@ -67,7 +67,7 @@ sequenceDiagram
     API-->>C: 202 {submissionId, status: queued}
     W->>PG: UPDATE … SET status = running, attempts+1, lock_token, lease WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)
     W->>PG: load submission + problem (repositories)
-    W->>S: run code against each test case (async, per-test timeout)
+    W->>S: run code against all test cases (async; V8 per-test timeout, process kill as backstop)
     W->>PG: heartbeat every lease/3 (renew locked_until)
     S-->>W: ExecutionResult {status, perTest[]}
     W->>PG: still my lock_token? (else drop the result: another worker took over)
@@ -81,12 +81,20 @@ sequenceDiagram
         API->>PG: fetch submission
         API-->>C: 200 {status, passed, total, results}
     end
-    Note over C,API: Day 7 adds Socket.IO push (submission:finished) so clients can stop polling.
+    PG-->>API: NOTIFY dsa_events (trigger on every status change, migration 005)
+    API-->>C: Socket.IO submission:queued / running / finished (room user:<id>)
+    Note over C,API: Day 7: clients get pushed events; polling stays as the fallback (docs/websocket-events.md).
 ```
 
 **Day 6 reliability:** retries with exponential backoff, a dead-letter list (`status = failed`, admin requeue), leases so a killed worker's job is re-claimed, 429 backpressure and Prometheus metrics. Full design and failure table: [`queue-design.md`](./queue-design.md).
 
 **Why this is safe with several workers:** `FOR UPDATE SKIP LOCKED` hands each queued row to exactly one worker; `judgeSubmission` ignores rows that are already judged; the unique index `(user_id, idempotency_key)` stops duplicate POSTs even when retries race. If a NOTIFY is missed, workers still poll every `WORKER_POLL_MS`.
+
+**Day 8, hardening:** per-IP/per-user rate limits, per-user quotas counted in PostgreSQL, security headers, a CORS allow-list, the Node permission model on sandbox children, and an audit row per submission. Threats and mitigations: [`threat-model.md`](./threat-model.md).
+
+**Day 9, performance:** one sandbox child per submission (not per test) and one judging loop per CPU core. End-to-end p95 for 100 concurrent submissions went from 12.7 s to 1.7 s ([`load-test-report.md`](./load-test-report.md)).
+
+**Day 7, real time:** Socket.IO runs on the API's HTTP server and authenticates with the JWT in the handshake. Database triggers publish every submission status change, plus new daily challenges and leaderboard changes, with `pg_notify`. Each API instance `LISTEN`s and forwards to its own sockets, so it works with several instances and no Redis (CR-021). The daily challenge is a deterministic pick per UTC day, created by the worker just after midnight. Details: [`websocket-events.md`](./websocket-events.md).
 
 ## 3. Deployment view
 

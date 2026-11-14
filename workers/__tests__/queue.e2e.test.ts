@@ -13,6 +13,8 @@ const TWO_SUM_OK =
   'function solve({ nums, target }) { const m = new Map(); for (let i = 0; i < nums.length; i++) { if (m.has(target - nums[i])) return [m.get(target - nums[i]), i]; m.set(nums[i], i); } }';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// These tests poll fast and submit a lot as one user: they test the queue, not the Day 8 limits (security.test.ts does).
+const NO_LIMITS = { quota: { perMinute: 1e6, perDay: 1e6 }, rateLimit: { perIp: 1e6, perUser: 1e6 } };
 
 (DB_URL ? describe : describe.skip)('submission queue end-to-end (PostgreSQL + separate worker process)', () => {
   let worker: ChildProcess;
@@ -21,6 +23,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let app: ReturnType<typeof import('../../server/src/app').buildApp>;
   let pool: typeof import('../../server/src/db/pool').pool;
   let closePool: () => Promise<void>;
+  let buildAppFn: typeof import('../../server/src/app').buildApp;
   let auth: { authorization: string };
 
   beforeAll(async () => {
@@ -29,8 +32,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const { migrateUp } = await import('../../server/src/db/migrate');
     const repos = await import('../../server/src/db/repositories');
     const { buildApp } = await import('../../server/src/app');
+    buildAppFn = buildApp;
     const { PostgresSubmissionQueue } = await import('../../server/src/modules/submissions/queue');
-    const { PROBLEMS } = await import('@dsa-portal/core');
+    // The seeded two-sum (5 tests), as in a real database; core's bundled copy has only 3.
+    const { SEED_PROBLEMS: PROBLEMS } = await import('../../server/src/db/seeds/problems-data');
     ({ pool, closePool } = db);
 
     await migrateUp();
@@ -42,7 +47,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const problems = new repos.PostgresProblemRepository();
     if (!(await problems.findById('two-sum'))) await problems.save(PROBLEMS.find((p) => p.id === 'two-sum')!);
 
-    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue() });
+    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue(), leaderboard: new (await import('../../server/src/modules/leaderboard/store')).PostgresLeaderboardStore(), ...NO_LIMITS });
     await app.ready();
     auth = { authorization: `Bearer ${app.jwt.sign({ sub: USER_ID })}` };
 
@@ -63,6 +68,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     await app?.close();
     await closePool?.();
   });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const buildRealtimeApp = ({ repos, ...rest }: { repos: typeof import('../../server/src/db/repositories') } & Record<string, any>) =>
+    buildAppFn({ logger: false, problems: new repos.PostgresProblemRepository(), submissions: new repos.PostgresSubmissionRepository(), ...NO_LIMITS, ...rest });
 
   const submit = (code: string, headers: Record<string, string> = {}) =>
     app.inject({ method: 'POST', url: '/api/v1/submissions', headers: { ...auth, ...headers }, payload: { problemId: 'two-sum', code } });
@@ -106,6 +115,75 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const rows = await pool.query(`SELECT count(*)::int AS n FROM submissions WHERE user_id = $1 AND idempotency_key = $2`, [USER_ID, headers['idempotency-key']]);
     expect(rows.rows[0].n).toBe(1);
   }, 20000);
+
+  // Day 7, while the separate worker process is still running: the full path API → queue → worker →
+  // PostgreSQL trigger → NOTIFY → Socket.IO gateway → the right browser.
+  it('real time: submission events reach only the submitter, in order; leaderboard and daily reach everyone', async () => {
+    const { io: connectSocket } = await import('socket.io-client');
+    const repos = await import('../../server/src/db/repositories');
+    const { PostgresSubmissionQueue } = await import('../../server/src/modules/submissions/queue');
+    const { PostgresLeaderboardStore } = await import('../../server/src/modules/leaderboard/store');
+    const { PostgresDailyChallengeStore, utcDate } = await import('../../server/src/modules/daily/store');
+    const { PostgresEventSource } = await import('../../server/src/modules/realtime/gateway');
+    const OTHER = '00000000-0000-0000-0000-0000000e2e02';
+    await pool.query(
+      `INSERT INTO users (id, username, email, password_hash) VALUES ($1, 'e2e_other', 'e2e2@test.dev', 'x') ON CONFLICT (id) DO NOTHING`,
+      [OTHER]
+    );
+    const rt = buildRealtimeApp({
+      repos,
+      queue: new PostgresSubmissionQueue(),
+      leaderboard: new PostgresLeaderboardStore(),
+      daily: new PostgresDailyChallengeStore(),
+      events: new PostgresEventSource(),
+    });
+    await rt.listen({ port: 0, host: '127.0.0.1' });
+    const url = `http://127.0.0.1:${(rt.server.address() as import('net').AddressInfo).port}`;
+    type Got = Array<{ event: string; data: { submissionId?: string; userId?: string; date?: string } }>;
+    const connect = (token: string) =>
+      new Promise<{ socket: ReturnType<typeof connectSocket>; got: Got }>((resolve, reject) => {
+        const socket = connectSocket(url, { auth: { token }, transports: ['websocket'], reconnection: false });
+        const got: Got = [];
+        socket.onAny((event, data) => got.push({ event, data }));
+        socket.once('connect', () => resolve({ socket, got }));
+        socket.once('connect_error', reject);
+      });
+    try {
+      await expect(connect('not-a-jwt')).rejects.toThrow('UNAUTHORIZED');
+      const a = await connect(rt.jwt.sign({ sub: USER_ID }));
+      const b = await connect(rt.jwt.sign({ sub: OTHER }));
+
+      const res = await rt.inject({ method: 'POST', url: '/api/v1/submissions', headers: { authorization: `Bearer ${rt.jwt.sign({ sub: USER_ID })}` }, payload: { problemId: 'two-sum', code: TWO_SUM_OK } });
+      const id = res.json().submissionId;
+      const mine = (got: Got) => got.filter((e) => e.data?.submissionId === id).map((e) => e.event);
+      for (let i = 0; i < 150 && !mine(a.got).includes('submission:finished'); i++) await sleep(100);
+      for (let i = 0; i < 20 && !b.got.some((e) => e.event === 'leaderboard:updated'); i++) await sleep(100);
+
+      expect(mine(a.got)).toEqual(['submission:queued', 'submission:running', 'submission:finished']);
+      expect(a.got.find((e) => e.event === 'submission:finished')?.data).toMatchObject({ status: 'judged', passed: 5, total: 5 });
+      expect(mine(b.got)).toEqual([]); // never sees someone else's submission
+      for (const s of [a, b]) expect(s.got.some((e) => e.event === 'leaderboard:updated' && e.data.userId === USER_ID)).toBe(true);
+
+      // daily:new fires once, when the day's row is created; later reads don't announce it again.
+      await pool.query('DELETE FROM daily_challenges WHERE challenge_date = $1', [utcDate()]);
+      const auth2 = { authorization: `Bearer ${rt.jwt.sign({ sub: OTHER })}` };
+      const [d1, d2] = await Promise.all([1, 2].map(() => rt.inject({ url: '/api/v1/daily-challenge', headers: auth2 })));
+      expect(d1.json().problemId).toBe(d2.json().problemId);
+      for (let i = 0; i < 20 && !b.got.some((e) => e.event === 'daily:new'); i++) await sleep(100);
+      await sleep(300);
+      for (const s of [a, b]) {
+        expect(s.got.filter((e) => e.event === 'daily:new').map((e) => e.data)).toEqual([{ date: utcDate(), problemId: d1.json().problemId }]);
+      }
+
+      const board = (await rt.inject({ url: '/api/v1/leaderboard?period=week' })).json();
+      expect(board.data.find((r: { userId: string }) => r.userId === USER_ID)).toMatchObject({ username: 'e2e_user', solved: 1 });
+      a.socket.close();
+      b.socket.close();
+    } finally {
+      await rt.close();
+      await pool.query('DELETE FROM users WHERE id = $1', [OTHER]);
+    }
+  }, 30000);
 
   it('stops cleanly on SIGTERM after finishing its current job', async () => {
     const res = await submit('function solve() { while (true) {} }'); // ~5 tests x 2 s timeout

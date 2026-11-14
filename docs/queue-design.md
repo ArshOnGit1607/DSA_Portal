@@ -71,8 +71,8 @@ Closing it would need the save and the token check in one transaction, which mea
 ## Scaling workers horizontally
 
 - Start more worker processes, on the same machine or others, all pointing at the same `DATABASE_URL`. No coordinator, no config change: SKIP LOCKED spreads the rows.
-- Per process: `WORKER_CONCURRENCY` judging loops. Each sandbox run is a child process, so concurrency ≈ CPU cores is a sensible maximum.
-- Connections: each process needs `WORKER_CONCURRENCY + 2` (one per loop, one held for `LISTEN`, one for heartbeats/metrics). PostgreSQL `max_connections` is the real ceiling. Past ~100 workers, put PgBouncer in front (session mode for the `LISTEN` connection).
+- Per process: `WORKER_CONCURRENCY` judging loops, **default = CPU cores** (Day 9; was 2). Each loop runs one sandbox child at a time, so this keeps every core busy without oversubscribing. The load test measured ~2× throughput from this alone (`load-test-report.md`).
+- Connections: each process uses at most `WORKER_CONCURRENCY + 2` and never more than its pool (`DB_POOL_MAX`, default 10): loops borrow a connection per query and hold none while the sandbox runs (budget: one per loop, one held for `LISTEN`, one for heartbeats/metrics). PostgreSQL `max_connections` is the real ceiling. Past ~100 workers, put PgBouncer in front (session mode for the `LISTEN` connection).
 - Claim cost stays flat as history grows: partial indexes cover only `queued` rows (002) and `running` rows (003).
 - Ceiling: one PostgreSQL primary handles thousands of claims per second, far beyond what the sandbox's CPU cost allows per worker. If that ever becomes the bottleneck, move to Redis/BullMQ (CR-005 trade-off).
 

@@ -5,7 +5,11 @@ import type { DsaApi, Difficulty, Problem, StatsMe, StreakDetail, Submission, To
 
 /** User-facing error text; a network failure gets a plain sentence instead of "Failed to fetch". */
 export const errorMessage = (e: unknown) =>
-  e instanceof ApiError && e.status === 0 ? 'No connection to the server. Check your network and try again.' : e instanceof Error ? e.message : String(e);
+  e instanceof ApiError && e.status === 0
+    ? 'No connection to the server. Check your network and try again.'
+    : e instanceof ApiError && e.code === 'QUOTA_EXCEEDED' // CR-023: per-user submission quota
+      ? "You've hit the submission limit. Wait a minute and try again."
+      : e instanceof Error ? e.message : String(e);
 const message = errorMessage;
 
 // ---------------------------------------------------------------- auth

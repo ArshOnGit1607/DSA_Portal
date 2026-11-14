@@ -153,8 +153,8 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
     { route: 'GET /api/v1/stats/me/topics', url: '/api/v1/stats/me/topics', status: 200, token: 'A' },
     { route: 'GET /api/v1/stats/me/streak', url: '/api/v1/stats/me/streak', status: 200, token: 'A' },
     { route: 'GET /api/v1/stats/me/streak', url: '/api/v1/stats/me/streak', status: 401 },
-    { route: 'GET /api/v1/leaderboard', url: '/api/v1/leaderboard?limit=5', status: 200 },
-    { route: 'GET /api/v1/leaderboard', url: '/api/v1/leaderboard?cursor=LTE', status: 400 },
+    { route: 'GET /api/v1/leaderboard', url: '/api/v1/leaderboard?period=week&limit=5', status: 200 },
+    { route: 'GET /api/v1/leaderboard', url: '/api/v1/leaderboard?period=year', status: 400 },
     { route: 'GET /api/v1/daily-challenge', url: '/api/v1/daily-challenge', status: 200, token: 'A' },
     { route: 'GET /api/v1/daily-challenge', url: '/api/v1/daily-challenge', status: 401 },
   ];

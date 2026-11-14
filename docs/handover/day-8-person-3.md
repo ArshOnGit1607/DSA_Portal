@@ -1,7 +1,7 @@
 # Day 8 — Person 3: Offline UX, sync status, dark mode and accessibility
 
 ## What was built
-**Sync outbox (`ui-core/src/sync.ts`), one implementation for all clients.** Person 2's SyncEngine and the `/sync` routes don't exist yet (CR-023), so the clients ship a submission outbox:
+**Sync outbox (`ui-core/src/sync.ts`), one implementation for all clients.** Person 2's SyncEngine and the `/sync` routes don't exist yet (CR-030), so the clients ship a submission outbox:
 - A submit that fails with a network error goes into the outbox instead of failing (`SubmissionState.status = 'queued'`). On desktop, an offline submit is judged locally *and* queued with its local verdict.
 - Status `online | offline | syncing | error`, pending count, queued list (`pending → syncing → synced`, or `conflict` / `rejected` with a message), `syncNow()`, `clearFinished()`.
 - Reconnect (or signing in) replays the queue oldest first through `POST /submissions` with the **original Idempotency-Key**, then polls until judged. Single flight (one sync at a time). A 4xx refusal is `rejected` (e.g. problem removed), a 5xx/timeout stays pending with an error, 401 waits for sign-in. Items queued by user A are never sent for user B.
@@ -34,10 +34,10 @@ Manual check of the Day 8 "done when": web (`npm run dev:web` against the real A
 | `dsa.stores.sync` / `useSync()` | `{ online, status, queue, lastError, lastSyncedAt, enqueue, syncNow, clearFinished }` |
 | `createDsa({ network })` | new option: a `NetworkStatus` adapter; `settingsStorage` now also persists the outbox |
 | `withProblemCache`, `storageLocalStore` | exported from ui-core |
-| CR-023 (Person 2) | SyncEngine shape the UI can switch to; no endpoint, table or event changed |
+| CR-030 (Person 2; was CR-023 before the merge with `main`) | SyncEngine shape the UI can switch to; no endpoint, table or event changed |
 
 ## Known issues
-1. Not Person 2's SyncEngine (doesn't exist yet, CR-023); only submissions are queued. Hints and solution reveals need the network (desktop: offline engine has them).
+1. Not Person 2's SyncEngine (doesn't exist yet, CR-030); only submissions are queued. Hints and solution reveals need the network (desktop: offline engine has them).
 2. Web offline cache is one localStorage JSON blob (marked `shortcut:`); fine for a few hundred problems.
 3. Web can't judge offline (no sandbox in the browser); "Run tests" still works offline in the Web Worker.
 4. A desktop offline guest's queued submissions go to whoever signs in next on that machine.

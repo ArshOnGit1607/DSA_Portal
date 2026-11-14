@@ -32,7 +32,9 @@ export function useSubmissionStatus() {
 
 /** Today's challenge; `error` is set (e.g. offline or none today) rather than thrown. */
 export function useDailyChallenge() {
-  const { api } = useDsa();
+  const { api, realtime } = useDsa();
+  const [day, setDay] = useState(0); // bumped by the server's daily:new just after UTC midnight
+  useEffect(() => realtime?.onDailyNew(() => setDay((d) => d + 1)), [realtime]);
   const [state, setState] = useState<{ daily: DailyChallenge | null; loading: boolean; error: string | null }>({ daily: null, loading: true, error: null });
   const online = useStore(useDsa().stores.sync, (s) => s.online);
   useEffect(() => {
@@ -44,7 +46,7 @@ export function useDailyChallenge() {
     return () => {
       live = false;
     };
-  }, [api, online]); // hidden while offline, back after a reconnect
+  }, [api, online, day]); // hidden while offline, back after a reconnect
   return state;
 }
 export const useSettings = () => useStore(useDsa().stores.settings);

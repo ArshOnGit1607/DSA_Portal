@@ -3,7 +3,7 @@ import { Cache, MemoryBackend, RedisBackend, type CacheBackend } from '../src/ca
 import { CachedProblemRepository } from '../src/cache/cached-problem.repository';
 import { InMemoryProblemRepository } from '../src/modules/problems/in-memory-problem.repository';
 import { buildApp } from '../src/app';
-import { dailyProblemId } from '../src/modules/daily/routes';
+import { CachedDailyChallengeStore, CachedLeaderboardStore } from '../src/cache/cached-stores';
 
 const counter = <T,>(value: T, ms = 0) => {
   const fn = jest.fn(async () => {
@@ -122,37 +122,46 @@ describe('CachedProblemRepository', () => {
   });
 });
 
-describe('leaderboard + daily challenge routes', () => {
-  it('serve from the cache and count hits on /metrics', async () => {
-    const backend = new MemoryBackend();
-    const page = jest.fn(async () => [{ userId: 'u1', username: 'ada', solved: 3, totalScore: 6, rank: 1 }]);
-    const app = buildApp({ logger: false, cache: new Cache(backend), leaderboard: { page } });
+describe('cached leaderboard + daily challenge stores (wrappers around Person 1\'s stores, CR-022)', () => {
+  const row = { userId: 'u1', username: 'ada', solved: 3, totalScore: 6, lastSolvedAt: new Date('2026-11-13T10:00:00Z') };
+
+  it('serve Person 1\'s routes from the cache, keep Dates for ranking, and count hits', async () => {
+    const cache = new Cache(new MemoryBackend());
+    const rows = jest.fn(async () => [row]);
+    const getOrCreate = jest.fn(async () => 'two-sum');
+    const app = buildApp({
+      logger: false,
+      leaderboard: new CachedLeaderboardStore({ rows }, cache),
+      daily: new CachedDailyChallengeStore({ getOrCreate }, cache),
+    });
     await app.ready();
     const first = await app.inject({ url: '/api/v1/leaderboard?limit=1' });
     await app.inject({ url: '/api/v1/leaderboard?limit=1' });
-    expect(first.json()).toEqual({ data: [{ userId: 'u1', username: 'ada', solved: 3, totalScore: 6, rank: 1 }], nextCursor: null });
-    expect(page).toHaveBeenCalledTimes(1);
-    expect(page).toHaveBeenCalledWith(0, 2); // one extra row to know if there is a next page
+    expect(first.statusCode).toBe(200);
+    expect(first.json().data[0]).toMatchObject({ userId: 'u1', solved: 3, totalScore: 6, rank: 1 });
+    expect(rows).toHaveBeenCalledTimes(1);
+
+    await app.inject({ url: '/api/v1/leaderboard?period=week' }); // its own entry
+    expect(rows).toHaveBeenCalledTimes(2);
+    expect(rows.mock.calls[1][0]).toBeInstanceOf(Date);
 
     const token = app.jwt.sign({ sub: 'u1' });
-    const daily = await app.inject({ url: '/api/v1/daily-challenge', headers: { authorization: `Bearer ${token}` } });
-    expect(daily.json()).toMatchObject({ date: new Date().toISOString().slice(0, 10), problem: { id: daily.json().problemId } });
-
-    const metrics = await app.inject({ url: '/metrics' });
-    expect(metrics.headers['content-type']).toMatch(/^text\/plain/);
-    expect(metrics.body).toMatch(/dsa_cache_requests_total\{result="hit"\} [1-9]/);
+    for (let i = 0; i < 2; i++) await app.inject({ url: '/api/v1/daily-challenge', headers: { authorization: `Bearer ${token}` } });
+    expect(getOrCreate).toHaveBeenCalledTimes(1);
+    expect(cache.renderMetrics()).toMatch(/dsa_cache_requests_total\{result="hit"\} [1-9]/);
     await app.close();
   });
 
-  it('daily challenge: pinned problem wins, otherwise a stable rotation by UTC day', async () => {
-    const problems = new InMemoryProblemRepository();
-    const ids = (await problems.findAll()).map((p) => p.id).sort();
-    expect(await dailyProblemId('2026-11-13', { pinned: async () => 'pinned-one' }, problems)).toBe('pinned-one');
-    const a = await dailyProblemId('2026-11-13', { pinned: async () => null }, problems);
-    const b = await dailyProblemId('2026-11-14', { pinned: async () => null }, problems);
-    expect(ids).toContain(a);
-    expect(a).toBe(await dailyProblemId('2026-11-13', { pinned: async () => null }, problems));
-    expect(b).toBe(ids[(ids.indexOf(a!) + 1) % ids.length]);
+  it('a new leaderboard generation drops every cached board', async () => {
+    const cache = new Cache(new MemoryBackend());
+    const rows = jest.fn(async () => [row]);
+    const store = new CachedLeaderboardStore({ rows }, cache);
+    const [cached] = await store.rows(null);
+    expect(cached.lastSolvedAt).toBeInstanceOf(Date);
+    await store.rows(null);
+    await cache.bumpGeneration('leaderboard');
+    await store.rows(null);
+    expect(rows).toHaveBeenCalledTimes(2);
   });
 });
 

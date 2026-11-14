@@ -90,7 +90,7 @@ const strip = ({ passwordHash: _, ...u }: ApiUser & { passwordHash: string }): A
 
 const USER_COLS = 'id, username, email, role, created_at AS "createdAt"';
 
-/** Uses the `users` and `sessions` tables (001_initial_schema + 004_session_families). */
+/** Uses the `users` and `sessions` tables (001_initial_schema + 006_session_families). */
 export class PostgresAuthStore implements AuthStore {
   async createUser(u: { username: string; email: string; passwordHash: string }) {
     try {

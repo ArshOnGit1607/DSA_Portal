@@ -38,4 +38,4 @@
 | Demo script | ☑ | this file |
 | All client tests green | ☑ | ui-core 54, web 15, mobile 18, web e2e 2, desktop e2e 1 |
 | Manual checklist run on a real phone and Windows | ☐ | `docs/test/manual-checklist.md` (needs the devices) |
-| Open CRs for teammates | CR-022 (P1), CR-023, CR-024 (P2) | `docs/CHANGE_REQUESTS.md` |
+| Open CRs for teammates | CR-032 (P1), CR-030, CR-031 (P2) | `docs/CHANGE_REQUESTS.md` |

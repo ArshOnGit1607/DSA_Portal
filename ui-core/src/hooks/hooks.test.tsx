@@ -73,6 +73,7 @@ describe('hooks against the mock server', () => {
   it('network failures read as a sentence, not "Failed to fetch" (Day 9 bug 4)', () => {
     expect(errorMessage(new ApiError(0, 'NETWORK_ERROR', 'Failed to fetch'))).toBe('No connection to the server. Check your network and try again.');
     expect(errorMessage(new ApiError(404, 'NOT_FOUND', 'Problem not found'))).toBe('Problem not found');
+    expect(errorMessage(new ApiError(429, 'QUOTA_EXCEEDED', 'Too many submissions'))).toMatch(/submission limit/);
   });
 
   it('hooks outside the provider fail loudly', () => {

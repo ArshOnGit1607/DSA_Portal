@@ -6,6 +6,10 @@ info:
     Source of truth for /api/v1. JSON over HTTP, JWT Bearer auth.
     Never change an agreed endpoint, table column, or WebSocket event directly —
     propose changes in /docs/CHANGE_REQUESTS.md.
+
+    **Limits (Day 8, CR-023).** Every route may answer `429 RATE_LIMITED` with a `Retry-After`
+    header (requests per minute per IP, and per signed-in user). Bodies over 512 KiB get
+    `413 PAYLOAD_TOO_LARGE`. Both use the standard `Error` body. See /docs/threat-model.md.
 servers:
   - url: http://localhost:3000
     description: Local dev
@@ -744,8 +748,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '413':
+          description: Body larger than 512 KiB (PAYLOAD_TOO_LARGE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '429':
-          description: Queue is full (backpressure); retry after the Retry-After header's seconds
+          description: |
+            Retry after the Retry-After header's seconds. `error` says why:
+            `QUOTA_EXCEEDED` (this user's submissions per minute or per day),
+            `QUEUE_FULL` (backpressure) or `RATE_LIMITED` (requests per IP or user).
+            An idempotent replay is answered before any of these checks.
           headers:
             Retry-After:
               schema:
@@ -906,9 +920,18 @@ paths:
     get:
       tags: [leaderboard]
       operationId: leaderboardList
-      summary: Global leaderboard sorted by solved count then score
+      summary: Leaderboard - most problems solved, ties broken by who reached that count first
+      description: >
+        `totalScore` is Easy 1, Medium 2, Hard 3 per solved problem (shown, not used for ranking).
+        `period=week` counts only problems first solved in the last 7 days.
       security: []
       parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [week, all]
+            default: all
         - in: query
           name: cursor
           schema:
@@ -936,6 +959,8 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/LeaderboardEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   # ===========================================================================
   # Daily challenge
@@ -944,7 +969,7 @@ paths:
     get:
       tags: [daily]
       operationId: dailyGet
-      summary: Get today's daily challenge problem
+      summary: Get today's daily challenge problem (UTC day; the same problem for everyone)
       security:
         - bearerAuth: []
       responses:
@@ -954,6 +979,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DailyChallenge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 

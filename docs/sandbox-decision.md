@@ -19,12 +19,13 @@
 
 ## Chosen: child_process + vm inside
 
-Each test case runs in its own `child_process` (spawned `node sandbox-exec.js`). Inside that child:
+Each **submission** runs in its own `child_process` (spawned `node sandbox-exec.js`). Inside that child (Day 9 version):
 
-1. `vm.Script` compiles and runs user code in a **sandbox context** with no `require`, `process`, `fs`, `network`, or `console` (we inject a capturing `console`).
-2. `process.exit` is overridden to throw.
-3. `execFileSync` `timeout` option is the hard backstop — kills the whole process on infinite loop.
-4. `--max-old-space-size` enforces memory limit.
-5. Captured stdout is truncated to an output-size cap.
+1. Every test case gets a **fresh vm context** with no host objects: no `require`, `process`, `fs`, network, or host `console` (a capturing `console` is created inside the context). Nothing a test does is visible to the next.
+2. Code generation from strings (`eval`, `Function`) and WebAssembly are disabled, so `x.constructor.constructor('return process')()` cannot reach the host.
+3. **V8 stops each test** after the per-test timeout (`timeout` + `microtaskMode: 'afterEvaluate'`, so promise jobs count too). The host's `execFile` timeout is the hard backstop that kills the whole process.
+4. `--max-old-space-size` caps memory; the output cap applies per test.
+5. **Node's permission model** (Day 8): the child may read only the wrapper and its own temp dir, and may not write files, spawn processes or start worker threads. The env holds only `PATH`.
+6. One JSON line per finished test, so a crash in test k keeps tests 0…k-1; the rest are marked "Not run".
 
-**Trade-off:** Process spawn overhead per test (~50–150 ms). Acceptable for a DSA platform (few test cases per problem, low concurrency in MVP). Security and portability win over raw speed.
+**Trade-off:** one Node start (~40 ms) per submission. Day 3 started one per *test*, which made Node startup ~95% of judging CPU (see `load-test-report.md`; batching gave 3.7× throughput). Per-test isolation now comes from fresh contexts and V8 timeouts instead of fresh processes. The cost: a memory bomb ends the remaining tests of that one submission (same `error` verdict). Security and portability still win over raw speed; the next step for speed would be a warm pool of children.

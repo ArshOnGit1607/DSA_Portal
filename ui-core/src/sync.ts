@@ -9,7 +9,7 @@ import type { NetworkStatus } from './adapters/types';
  * Offline outbox for submissions: what the user submits without a connection is kept on the
  * device and replayed through POST /submissions (same Idempotency-Key) when the network returns.
  * The server judges it again and its verdict is the one that counts.
- * shortcut: client-side stand-in for Person 2's SyncEngine (CR-023); swap the replay for /sync/push when it exists.
+ * shortcut: client-side stand-in for Person 2's SyncEngine (CR-030); swap the replay for /sync/push when it exists.
  */
 export interface QueuedSubmission {
   /** Idempotency-Key: a replay after a lost response can't create a second submission. */

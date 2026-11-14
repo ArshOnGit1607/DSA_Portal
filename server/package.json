@@ -16,12 +16,13 @@
   },
   "dependencies": {
     "@dsa-portal/core": "*",
-    "@fastify/cors": "^9.0.0",
-    "@fastify/jwt": "^8.0.0",
+    "@fastify/cors": "^11.4.3",
+    "@fastify/jwt": "^10.2.7",
     "bcryptjs": "^2.4.3",
-    "fastify": "^4.26.0",
+    "fastify": "^5.12.8",
     "ioredis": "^5.11.1",
     "pg": "^8.23.1",
+    "socket.io": "^4.8.4",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "@types/pg": "^8.23.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^2.1.1",
+    "light-my-request": "6.6.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "yaml": "^2.9.1"

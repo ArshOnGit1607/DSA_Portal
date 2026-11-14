@@ -1,3 +1,5 @@
+> **Update (merge with `main`, Day 10):** Person 1's leaderboard, daily challenge and Socket.IO gateway replaced the fork's routes below (CR-021/CR-022 on `main`). The cache now wraps their stores (`server/src/cache/cached-stores.ts`; wiring = CR-032), `ui-core/src/realtime.ts` uses the handshake token and `submission:finished` / `leaderboard:updated` / `daily:new`, and migration 004 is now `006_session_families`.
+
 # Day 7 — Person 3: Redis caching, real-time clients, leaderboard and daily challenge (+ open CRs closed)
 
 ## What was built
@@ -7,7 +9,7 @@
 - Leaderboard (30 s, invalidated by the worker after every judged submission) and daily challenge (300 s). User-private data is never cached.
 - `GET /metrics` (Prometheus text): `dsa_cache_requests_total{result}`, `dsa_cache_errors_total`.
 
-**Endpoints the clients needed (Person 1's folders, CR-021):** `GET /api/v1/leaderboard` (solved, then score; ties share a rank; cursor paging) and `GET /api/v1/daily-challenge` (admin-pinned problem for today, else a daily rotation).
+**Endpoints the clients needed (Person 1's folders, CR-021 on the fork, now CR-028):** `GET /api/v1/leaderboard` (solved, then score; ties share a rank; cursor paging) and `GET /api/v1/daily-challenge` (admin-pinned problem for today, else a daily rotation).
 
 **Clients**
 - `ui-core/src/realtime.ts`: Socket.IO client (`auth:join`, `submission:result`, `leaderboard:update`). With a live socket the submission poll becomes a 5 s safety net that a pushed result cuts short; without one it is the normal 750 ms polling. Hooks: `useSubmissionStatus()` (adds `live`), `useDailyChallenge()`, `useLeaderboard()` (now reloads on `leaderboard:update`, has `reload`).
@@ -35,12 +37,12 @@ Verified on the real stack (PostgreSQL + Redis + worker): seed login 200; leader
 | `GET /api/v1/leaderboard?limit&cursor` | public, `{ data: LeaderboardEntry[], nextCursor }` |
 | `GET /api/v1/daily-challenge` | bearer, `{ date, problemId, problem }` |
 | `GET /metrics` | Prometheus text (cache) |
-| Socket.IO (clients expect) | emit `auth:join {token}`; receive `submission:result`, `leaderboard:update` (CR-022 asks to add `submissionId`) |
+| Socket.IO (clients expect) | emit `auth:join {token}`; receive `submission:result`, `leaderboard:update` (CR-022 on the fork, now CR-029, withdrawn) |
 
 Cache helper usage for Person 1: see "Usage for Person 1" in `docs/design/cache-design.md`.
 
 ## Known issues
-1. **No Socket.IO server yet** (Person 1's realtime module). Clients connect, fail quietly and keep polling, so results still arrive; `live` stays false until the server exists. CR-022 for `submissionId` in `submission:result`.
+1. **No Socket.IO server yet** (Person 1's realtime module). Clients connect, fail quietly and keep polling, so results still arrive; `live` stays false until the server exists. CR-022 (now CR-029) for `submissionId` in `submission:result`.
 2. **Mobile notifications (expo-notifications) dropped**, as the pack allows when time is short: it needs a native rebuild of the dev client. Next step: daily-challenge + streak reminders as local notifications.
 3. Leaderboard paging is an opaque offset (fine for a 30 s cached board); "Load more" isn't shown yet (first 50).
 4. Login throttling is still per process; it can move onto the same Redis next.
