@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "node dist/main.js",
     "dev": "tsx watch src/main.ts",
-    "chaos": "tsx scripts/chaos.ts"
+    "chaos": "tsx scripts/chaos.ts",
+    "load": "tsx scripts/load-test.ts"
   },
   "dependencies": {
     "@dsa-portal/core": "*",
