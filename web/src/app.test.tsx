@@ -26,9 +26,20 @@ const renderApp = (hash = '#/') => {
 };
 
 describe('web app', () => {
-  it('sends anonymous users to login, signs in, then shows the topic picker', async () => {
+  it('shows anonymous users the landing page, then logs in to the topic picker', async () => {
     await dsa.stores.auth.getState().restore(); // no session yet → anonymous
     renderApp('#/');
+    expect(
+      await screen.findByRole('heading', { name: /Practise DSA calmly/, level: 1 })
+    ).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Practice' })).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Get started' })[0].getAttribute('href')).toBe(
+      '#/register'
+    );
+    // Live topic count from the public /topics endpoint; animated parts are hidden from screen readers.
+    expect(await screen.findByRole('heading', { name: '8 topics to practise' })).toBeTruthy();
+    expect(document.querySelector('.editor-mock')?.getAttribute('aria-hidden')).toBe('true');
+    fireEvent.click(screen.getAllByRole('link', { name: 'Log in' })[0]);
     fireEvent.change(await screen.findByLabelText('Email'), { target: { value: 'demo@dsa.dev' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -38,6 +49,12 @@ describe('web app', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('heading', { name: 'Practice' })).toBeTruthy();
     await waitFor(() => expect(screen.getByRole('option', { name: 'Graphs' })).toBeTruthy());
+  });
+
+  it('sends logged-in users at the root straight to Practice', async () => {
+    renderApp('#/');
+    expect(await screen.findByRole('heading', { name: 'Practice' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Get started' })).toBeNull();
   });
 
   it('stats page shows the empty state, then numbers after a solve', async () => {

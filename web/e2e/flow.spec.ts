@@ -1,5 +1,5 @@
 /**
- * Web e2e on the real server app (e2e/test-api.ts): register → login → choose topic → solve →
+ * Web e2e on the real server app (e2e/test-api.ts): landing → register → login → choose topic → solve →
  * see the result → see stats; then the offline scenario: submit offline → reconnect → synced.
  */
 import { test, expect, type Page } from '@playwright/test';
@@ -37,8 +37,11 @@ test.beforeEach(async ({ context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
 });
 
-test('register → login → choose topic → solve → result → stats', async ({ page }) => {
-  await page.goto('/#/register');
+test('landing → register → login → choose topic → solve → result → stats', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: /Practise DSA calmly/, level: 1 })).toBeVisible();
+  await page.getByRole('link', { name: 'Get started' }).first().click();
+  await expect(page).toHaveURL(/#\/register$/);
   await page.getByLabel('Username').fill(user.username);
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Password').fill(user.password);
