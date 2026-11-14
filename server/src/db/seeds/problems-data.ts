@@ -427,7 +427,7 @@ export const SEED_PROBLEMS: Problem[] = [
     topic: 'Trees',
     difficulty: 'Easy',
     description:
-      'Given a binary tree represented as an array in level-order (with `null` for missing nodes), return its maximum depth. A binary tree’s maximum depth is the number of nodes along the longest path from the root node down to the farthest leaf node.',
+      'Given a binary tree represented as an array in level-order (with `null` for missing nodes), return its maximum depth. A binary tree’s maximum depth is the number of nodes along the longest path from the root node down to the farthest leaf node. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.',
     starterCode:
       'function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return 0;\n}',
     testCases: [
@@ -454,7 +454,7 @@ export const SEED_PROBLEMS: Problem[] = [
     topic: 'Trees',
     difficulty: 'Easy',
     description:
-      'Given the root of a binary tree represented as an array in level-order, invert the tree, and return its array representation.',
+      'Given the root of a binary tree represented as an array in level-order, invert the tree, and return its array representation. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.',
     starterCode:
       'function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return [];\n}',
     testCases: [
@@ -481,7 +481,7 @@ export const SEED_PROBLEMS: Problem[] = [
     topic: 'Trees',
     difficulty: 'Easy',
     description:
-      'Given the roots of two binary trees `p` and `q` represented as level-order arrays, write a function to check if they are the same or not.',
+      'Given the roots of two binary trees `p` and `q` represented as level-order arrays, write a function to check if they are the same or not. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.',
     starterCode:
       'function solve(input) {\n  const { p, q } = input;\n  // Your solution here\n  return false;\n}',
     testCases: [
@@ -508,7 +508,7 @@ export const SEED_PROBLEMS: Problem[] = [
     topic: 'Trees',
     difficulty: 'Medium',
     description:
-      'Given the `root` of a binary tree represented as an array in level-order, return the level order traversal of its nodes values. (i.e., from left to right, level by level).',
+      'Given the `root` of a binary tree represented as an array in level-order, return the level order traversal of its nodes values. (i.e., from left to right, level by level). The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.',
     starterCode:
       'function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return [];\n}',
     testCases: [
@@ -516,7 +516,7 @@ export const SEED_PROBLEMS: Problem[] = [
       { input: { tree: [1] }, expected: [[1]] },
       { input: { tree: [] }, expected: [] },
       { input: { tree: [1, 2, 3, 4, 5] }, expected: [[1], [2, 3], [4, 5]] },
-      { input: { tree: [1, null, 2, null, 3] }, expected: [[1], [2], [3]] },
+      { input: { tree: [1, null, 2, null, null, null, 3] }, expected: [[1], [2], [3]] },
     ],
     hints: [
       { level: 1, content: 'Use a Queue for Breadth-First Search (BFS).' },
@@ -535,7 +535,7 @@ export const SEED_PROBLEMS: Problem[] = [
     topic: 'Trees',
     difficulty: 'Medium',
     description:
-      'Given the root of a binary tree represented as an array, determine if it is a valid binary search tree (BST). A valid BST requires all left subtree nodes to be strictly less than the root, and all right subtree nodes to be strictly greater than the root.',
+      'Given the root of a binary tree represented as an array, determine if it is a valid binary search tree (BST). A valid BST requires all left subtree nodes to be strictly less than the root, and all right subtree nodes to be strictly greater than the root. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.',
     starterCode:
       'function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return false;\n}',
     testCases: [
