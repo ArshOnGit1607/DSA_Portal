@@ -272,3 +272,10 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
   The full-flow test builds and starts the real API and worker itself. It needs no Redis (CR-021).
 - **Status:** pending
 - **Approved by:** —
+
+## CR-027
+- **Proposed by:** Person 1 (Day 9), **for Person 2** (owner of `server/src/db/seed.ts`)
+- **Problem:** the seeded `admin@dsa.portal` and `student@dsa.portal` can't log in. The hash in `seed.ts` (comment: "bcrypt hash for password123") doesn't match `password123`. `bcrypt.compare('password123', <hash>)` returns `false`.
+- **Proposed change:** replace it with a real hash, e.g. the output of `node -e "require('bcryptjs').hash('password123', 10).then(console.log)"`, and add a seed test that `compare`s it.
+- **Status:** pending
+- **Approved by:** —
