@@ -1,7 +1,7 @@
-# API examples (Days 4–7)
+# API examples (Days 4–10)
 
-curl examples for every endpoint implemented so far. Contract: `/docs/openapi.yaml`.
-Auth, stats, leaderboard, daily-challenge, admin and sync endpoints come later (Persons 2/3, Days 5–7).
+curl examples for the backend's endpoints. Contract: `/docs/openapi.yaml`, rendered at **http://localhost:3000/docs** (Day 10).
+Register/login examples: [`server/README.md`](../server/README.md). Sync endpoints are Person 2's.
 
 ## Setup
 
@@ -147,4 +147,28 @@ node -e "require('socket.io-client').io('http://localhost:3000',{auth:{token:pro
 curl -s $B/problems                                   # 401 UNAUTHORIZED
 curl -s "$B/problems?difficulty=Insane" -H "$H"       # 400 VALIDATION_ERROR
 curl -s $B/problems/nope -H "$H"                      # 404 NOT_FOUND
+```
+
+## Limits (Day 8)
+
+Every `429` carries `Retry-After` (seconds) and says why in `error`:
+
+```bash
+# 11th submission within a minute by the same user (SUBMIT_QUOTA_PER_MINUTE, default 10; 500 per day)
+# HTTP/1.1 429 Too Many Requests
+# retry-after: 42
+# {"error":"QUOTA_EXCEEDED","message":"Submission quota of 10 per minute reached; retry in 42s","statusCode":429,...}
+
+# Any route: more than RATE_LIMIT_IP_PER_MIN (300) per IP or RATE_LIMIT_USER_PER_MIN (120) per user
+# {"error":"RATE_LIMITED","message":"Too many requests from this IP; retry in 17s","statusCode":429,...}
+
+# Bodies over 512 KiB → 413 PAYLOAD_TOO_LARGE; code containing a NUL character → 400 VALIDATION_ERROR
+curl -sI $B/health | grep -iE 'x-content-type|x-frame|content-security'   # security headers on every response
+```
+
+## API reference (Day 10)
+
+```bash
+open http://localhost:3000/docs                       # Redoc, rendered from the spec below
+curl -s http://localhost:3000/docs/openapi.yaml | head # the same openapi.yaml the contract test checks
 ```
