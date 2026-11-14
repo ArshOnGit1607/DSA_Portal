@@ -167,3 +167,24 @@ describe('audit log', () => {
     await app.close();
   });
 });
+
+describe('API docs (Day 10)', () => {
+  it('serves Redoc at /docs with a CSP that allows only its pinned script, and the spec it renders', async () => {
+    const { app } = await setup();
+    const page = await app.inject({ method: 'GET', url: '/docs' });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain('<redoc spec-url="/docs/openapi.yaml">');
+    expect(page.headers['content-security-policy']).toMatch(/script-src https:\/\/cdn\.redoc\.ly;/);
+    expect(page.headers['x-frame-options']).toBe('DENY');
+
+    const spec = await app.inject({ method: 'GET', url: '/docs/openapi.yaml' });
+    expect(spec.statusCode).toBe(200);
+    expect(spec.headers['content-type']).toMatch(/yaml/);
+    expect(spec.body).toMatch(/^openapi: 3/);
+    // Everything else keeps the strict CSP.
+    expect((await app.inject({ method: 'GET', url: '/api/v1/health' })).headers['content-security-policy']).toBe(
+      "default-src 'none'; frame-ancestors 'none'"
+    );
+    await app.close();
+  });
+});

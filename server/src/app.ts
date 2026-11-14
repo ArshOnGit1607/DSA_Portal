@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import Fastify from 'fastify';
-import type { FastifyError, FastifyRequest, FastifyServerOptions } from 'fastify';
+import type { FastifyError, FastifyInstance, FastifyRequest, FastifyServerOptions } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import { ZodError } from 'zod';
@@ -143,7 +145,8 @@ export function buildApp(opts: AppOptions = {}) {
 
   app.addHook('onSend', async (req, reply) => {
     reply.header('x-request-id', req.id);
-    reply.headers(SECURITY_HEADERS);
+    // A route may set its own CSP (the /docs page needs the Redoc script); everything else gets the strict one.
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!reply.hasHeader(k)) reply.header(k, v);
   });
 
   app.setErrorHandler((err: FastifyError, req, reply) => {
@@ -215,7 +218,32 @@ export function buildApp(opts: AppOptions = {}) {
     { prefix: '/api/v1' }
   );
 
+  serveApiDocs(app);
   if (opts.events) attachRealtime(app, opts.events, corsOrigin);
   return app;
 }
 
+/** Same file from src/ and dist/: server/{src,dist}/app → docs/openapi.yaml. Absent in a slim image → no /docs. */
+const SPEC_PATH = join(__dirname, '../../docs/openapi.yaml');
+const REDOC = 'https://cdn.redoc.ly/redoc/v2.1.5/bundles/redoc.standalone.js'; // pinned version
+
+/** GET /docs (Redoc, rendered from the same openapi.yaml the contract test checks) and GET /docs/openapi.yaml. */
+function serveApiDocs(app: FastifyInstance) {
+  if (!existsSync(SPEC_PATH)) return;
+  const spec = readFileSync(SPEC_PATH, 'utf8');
+  app.get('/docs/openapi.yaml', async (_req, reply) => reply.type('application/yaml; charset=utf-8').send(spec));
+  app.get('/docs', async (_req, reply) =>
+    reply
+      .type('text/html; charset=utf-8')
+      .header(
+        'content-security-policy',
+        `default-src 'none'; script-src ${new URL(REDOC).origin}; style-src 'unsafe-inline'; img-src 'self' data:; ` +
+          "font-src 'self' data:; connect-src 'self'; worker-src blob:; frame-ancestors 'none'"
+      )
+      .send(
+        '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>DSA Portal API</title>' +
+          '<meta name="viewport" content="width=device-width, initial-scale=1"></head>' +
+          `<body><redoc spec-url="/docs/openapi.yaml"></redoc><script src="${REDOC}"></script></body></html>`
+      )
+  );
+}
