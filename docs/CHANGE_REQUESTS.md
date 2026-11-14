@@ -199,3 +199,76 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
   5. `/metrics`: the worker already serves Prometheus on `WORKER_METRICS_PORT`. Put the API's cache counters there or at `GET /metrics` on the API, but agree the name with Person 2 so one scrape config covers both.
 - **Status:** pending
 - **Approved by:** —
+
+## CR-023
+- **Proposed by:** Person 1 (Day 8), **for Person 2 and Person 3** (FYI: additive API behaviour + server dependency upgrade)
+- **Changes already made (Person 1's files):**
+  1. **New 4xx responses, same `Error` body:** any route may return `429 RATE_LIMITED` (per IP 300/min, per signed-in user 120/min) and `413 PAYLOAD_TOO_LARGE` (body > 512 KiB). `POST /submissions` may return `429 QUOTA_EXCEEDED` (per user 10/min, 500/day). Every 429 has `Retry-After`. Code with a NUL character is now a `400 VALIDATION_ERROR` (was a 500 from PostgreSQL). Documented in `openapi.yaml`. No endpoint, field or event changed.
+  2. **Security headers** on every response (`nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, HSTS, `CSP: default-src 'none'`), and a **CORS allow-list** (`CORS_ORIGINS`) shared with Socket.IO. In production with `CORS_ORIGINS` unset, browsers on other origins are refused. **Person 3:** add the web app's origin, and the desktop renderer's if it calls the API from the renderer. Native mobile and the CLI send no `Origin` and are unaffected.
+  3. **Fastify 4 → 5** (`fastify` 5.12.8, `@fastify/jwt` 10.2.7, `@fastify/cors` 11.4.3) to fix the `npm audit` criticals (see `docs/threat-model.md`). Person 3's auth/admin/stats modules compile and pass their tests unchanged. `light-my-request` (used by `app.inject` in tests) is pinned to 6.6.0 as a server devDependency, because 6.8 pulls the ESM-only `cookie@2`, which Jest (CommonJS) can't load.
+  4. Each submission writes an `audit_log` row (`action = 'submission.create'`) through Person 2's `PostgresAuditRepository`.
+- **Clients (Person 3):** on 429, read `error` and wait `Retry-After`. `QUOTA_EXCEEDED` deserves its own message ("you've hit the submission limit, try again in N s").
+- **Status:** done, FYI
+- **Approved by:** —
+
+## CR-024
+- **Proposed by:** Person 1 (Day 8), **for Person 2** (owner of `/infra` and docker files)
+- **Proposed change:** run the worker with reduced privileges and hard resource limits. There's no worker image yet; when you add the API and worker services to `infra/docker-compose.yml`, please use this for the worker:
+  ```yaml
+  worker:
+    build: { context: .., dockerfile: infra/Dockerfile.worker }   # FROM node:20-alpine … USER node
+    command: node workers/dist/main.js
+    user: "node"                 # never root
+    read_only: true              # sandbox writes only to /tmp
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128              # WORKER_CONCURRENCY × 1 child + headroom; stops fork bombs at the kernel
+    mem_limit: 512m              # children are capped at 64 MB each by --max-old-space-size
+    cpus: "1.0"
+    environment: [DATABASE_URL, WORKER_CONCURRENCY, WORKER_METRICS_PORT]   # NOT JWT_SECRET: the worker doesn't need it
+  ```
+  Inside it, each sandbox child already runs under Node's permission model (no fs writes, reads only its own temp dir, no child processes or worker threads) with a 64 MB heap, a 2 s per-test timeout and an env with only `PATH`.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-025
+- **Proposed by:** Person 1 (Day 8), **for Person 3** (owner of `/web`, `/mobile`)
+- **Context:** after Day 8's server fixes, the remaining `npm audit --omit=dev` findings (50: 1 critical, 21 high) are all in client toolchains, except zod (mitigated by the 512 KiB body limit). Full table in `docs/threat-model.md`.
+- **Proposed change:**
+  1. Mobile: plan the Expo SDK upgrade (51 → current) after the demo. It clears `tar` (critical), `@xmldom/xmldom`, `postcss`, `@expo/*`, `expo-router`, `@react-navigation/*` and the RN CLI findings. These are build-time tools, so there's no runtime risk for the demo.
+  2. Web: React Router 6 → 7 clears `react-router`, `@remix-run/*` and `turbo-stream`. The SPA doesn't use the SSR paths those advisories are about.
+  3. Test hygiene: `server/__tests__/person3-postgres.test.ts` › "keeps stats counters right under concurrent submissions" fails when run on its own against a fresh DB, because it needs the `two-sum` problem, which only `workers/__tests__/queue.e2e.test.ts` seeds. Seed it in that test's `beforeAll` (insert `two-sum` `ON CONFLICT DO NOTHING`).
+- **Status:** pending
+- **Approved by:** —
+
+## CR-026
+- **Proposed by:** Person 1 (Day 9), **for Person 2** (owner of `/.github`)
+- **Proposed change:** add CI so the Day 9 full-flow test (`workers/__tests__/full-flow.e2e.test.ts`) and every other suite run on each push and PR. Ready-to-use `.github/workflows/ci.yml`:
+  ```yaml
+  name: ci
+  on: [push, pull_request]
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      services:
+        postgres:
+          image: postgres:16-alpine
+          env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: dsa_portal_test }
+          ports: ["5432:5432"]
+          options: >-
+            --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      env:
+        TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dsa_portal_test
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: npm run build
+        - run: npx jest --runInBand   # runInBand: suites share one database (parallel migrateUp on an empty DB races)
+        - run: npm test -w ui-core && npm test -w web && npm test -w mobile
+  ```
+  The full-flow test builds and starts the real API and worker itself. It needs no Redis (CR-021).
+- **Status:** pending
+- **Approved by:** —
