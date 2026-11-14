@@ -1,4 +1,5 @@
 // Worker process entry point: `npm run start -w workers` (after `npm run build`).
+import { availableParallelism } from 'os';
 import { pool, closePool } from '@dsa-portal/server/dist/db/pool';
 import {
   PostgresProblemRepository,
@@ -19,7 +20,8 @@ async function main() {
       submissions: new PostgresSubmissionRepository(),
       stats: statsServiceStub,
     },
-    concurrency: intEnv('WORKER_CONCURRENCY', 2, 1),
+    // One judging loop per core: each loop runs one sandbox child at a time, so this keeps every core busy (Day 9 load test).
+    concurrency: intEnv('WORKER_CONCURRENCY', availableParallelism(), 1),
     pollMs: intEnv('WORKER_POLL_MS', 2000, 100),
     queue: {
       maxAttempts: intEnv('WORKER_MAX_ATTEMPTS', DEFAULT_QUEUE_CONFIG.maxAttempts, 1),
