@@ -65,17 +65,23 @@ export async function runQueryBenchmarks(label = 'Benchmark'): Promise<QueryBenc
       {
         id: 'Q4',
         name: 'Global Leaderboard (Aggregated Solved & Submissions)',
-        sql: `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
-              SELECT u.id, u.username,
-                     COUNT(DISTINCT s.problem_id) FILTER (WHERE s.passed = s.total AND s.total > 0) AS solved_count,
-                     COUNT(s.id) AS total_submissions,
-                     MAX(s.created_at) AS last_submission_at
-              FROM users u
-              JOIN submissions s ON s.user_id = u.id
-              GROUP BY u.id, u.username
-              HAVING COUNT(DISTINCT s.problem_id) FILTER (WHERE s.passed = s.total AND s.total > 0) > 0
-              ORDER BY solved_count DESC, last_submission_at ASC
-              LIMIT 50;`,
+        sql: label.includes('AFTER')
+          ? `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+             SELECT user_id AS id, username, solved_count, total_submissions, score, last_submission_at, rank
+             FROM mv_leaderboard
+             ORDER BY rank ASC
+             LIMIT 50;`
+          : `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+             SELECT u.id, u.username,
+                    COUNT(DISTINCT s.problem_id) FILTER (WHERE s.passed = s.total AND s.total > 0) AS solved_count,
+                    COUNT(s.id) AS total_submissions,
+                    MAX(s.created_at) AS last_submission_at
+             FROM users u
+             JOIN submissions s ON s.user_id = u.id
+             GROUP BY u.id, u.username
+             HAVING COUNT(DISTINCT s.problem_id) FILTER (WHERE s.passed = s.total AND s.total > 0) > 0
+             ORDER BY solved_count DESC, last_submission_at ASC
+             LIMIT 50;`,
         params: [],
       },
       {
