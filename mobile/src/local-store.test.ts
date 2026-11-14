@@ -1,7 +1,7 @@
 /**
  * Runs the real SQL against Node's built-in SQLite (node:sqlite), wrapped in expo-sqlite's async API.
  */
-import { sqliteLocalStore, type SqlDb } from './local-store';
+import { sqliteKv, sqliteLocalStore, type SqlDb } from './local-store';
 import type { Problem } from '@dsa-portal/ui-core';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -39,5 +39,18 @@ describe('sqliteLocalStore', () => {
     const db = nodeSqlite();
     await (await sqliteLocalStore(db)).saveProblem(problem('a', 'Arrays', 'Easy'));
     expect(await (await sqliteLocalStore(db)).getProblem('a')).not.toBeNull();
+  });
+});
+
+describe('sqliteKv', () => {
+  it('stores, overwrites and removes values (settings + sync outbox)', async () => {
+    const db = nodeSqlite();
+    const kv = sqliteKv(async () => db);
+    expect(await kv.getItem('dsa.outbox')).toBeNull();
+    await kv.setItem('dsa.outbox', '{"a":1}');
+    await kv.setItem('dsa.outbox', '{"a":2}');
+    expect(await sqliteKv(async () => db).getItem('dsa.outbox')).toBe('{"a":2}');
+    await kv.removeItem('dsa.outbox');
+    expect(await kv.getItem('dsa.outbox')).toBeNull();
   });
 });

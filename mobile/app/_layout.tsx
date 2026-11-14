@@ -7,13 +7,23 @@ import { dsa } from '../src/dsa';
 import { useTheme } from '../src/theme';
 
 export default function RootLayout() {
-  const { c, mode } = useTheme();
   useEffect(() => {
     void dsa.stores.auth.getState().restore(); // silent sign-in with the stored refresh token
   }, []);
   return (
     <SafeAreaProvider>
       <DsaProvider value={dsa}>
+        <Root />
+      </DsaProvider>
+    </SafeAreaProvider>
+  );
+}
+
+/** Inside the provider so the theme follows Settings → Theme. */
+function Root() {
+  const { c, mode } = useTheme();
+  return (
+    <>
         <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
         <Stack
           screenOptions={{
@@ -26,7 +36,6 @@ export default function RootLayout() {
           <Stack.Screen name="register" options={{ title: 'Create account' }} />
           <Stack.Screen name="(app)" options={{ headerShown: false }} />
         </Stack>
-      </DsaProvider>
-    </SafeAreaProvider>
+    </>
   );
 }

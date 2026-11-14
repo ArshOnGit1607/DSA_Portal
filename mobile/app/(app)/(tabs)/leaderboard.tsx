@@ -1,11 +1,11 @@
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useAuth, useLeaderboard } from '@dsa-portal/ui-core';
-import { Body, Card, ErrorText, H1 } from '../../../src/components/ui';
+import { Body, Button, Card, ErrorText, H1 } from '../../../src/components/ui';
 import { useTheme } from '../../../src/theme';
 
 /** Public leaderboard; refreshes on `leaderboard:update` pushes and on pull-to-refresh. */
 export default function Leaderboard() {
-  const { entries, loading, error, reload } = useLeaderboard(50);
+  const { entries, loading, error, reload, nextCursor, loadMore } = useLeaderboard(50);
   const { user } = useAuth();
   const { c, space } = useTheme();
   return (
@@ -33,6 +33,7 @@ export default function Leaderboard() {
           })}
         </Card>
       )}
+      {nextCursor && <Button title="Load more" busy={loading} onPress={() => void loadMore()} />}
     </ScrollView>
   );
 }

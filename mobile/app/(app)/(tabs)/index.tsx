@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
-import { useDsa, useProblem, type Difficulty } from '@dsa-portal/ui-core';
+import { useDsa, useProblem, useSync, type Difficulty, type ProblemSummary } from '@dsa-portal/ui-core';
 import { Body, Button, Card, Chip, ErrorText, H1, H2 } from '../../../src/components/ui';
 import { DailyChallengeCard } from '../../../src/components/DailyChallengeCard';
 import { useTheme } from '../../../src/theme';
@@ -15,10 +15,18 @@ export default function Practice() {
   const { c, space } = useTheme();
   const [topics, setTopics] = useState<string[]>([]);
   const [topicsError, setTopicsError] = useState<string | null>(null);
+  const { online } = useSync();
+  const [saved, setSaved] = useState<ProblemSummary[] | null>(null);
 
   useEffect(() => {
+    setTopicsError(null);
     api.topics().then(setTopics, (e: Error) => setTopicsError(e.message));
-  }, [api]);
+  }, [api, online]);
+  // Offline: list what is on this phone (problems opened before), filtered like the picker.
+  useEffect(() => {
+    if (online) return setSaved(null);
+    api.problems({ topic: topic ?? undefined, difficulty: difficulty ?? undefined }).then((p) => setSaved(p.data), () => setSaved([]));
+  }, [api, online, topic, difficulty]);
 
   const start = async () => {
     await loadRandom();
@@ -47,6 +55,17 @@ export default function Practice() {
           <Button title="Start" primary busy={loading} onPress={() => void start()} />
         </View>
       </Card>
+      {saved && (
+        <Card>
+          <H2>On this phone</H2>
+          {saved.length === 0 && <Body muted>No saved problems match. Problems you open while online are kept for offline reading.</Body>}
+          {saved.map((p) => (
+            <View key={p.id} style={{ marginBottom: space.sm }}>
+              <Button title={`${p.title} · ${p.difficulty}`} onPress={() => router.push(`/problem/${encodeURIComponent(p.id)}`)} />
+            </View>
+          ))}
+        </Card>
+      )}
     </ScrollView>
   );
 }
