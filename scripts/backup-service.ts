@@ -46,6 +46,7 @@ export class BackupService {
     database: string;
     schemaVersion: string;
     tableCounts: Record<string, number>;
+    timestamp?: string;
   }): BackupManifest {
     const stats = fs.statSync(params.filePath);
     const checksum = this.computeChecksum(params.filePath);
@@ -53,7 +54,7 @@ export class BackupService {
 
     const manifest: BackupManifest = {
       id,
-      timestamp: new Date().toISOString(),
+      timestamp: params.timestamp || new Date().toISOString(),
       database: params.database,
       fileName: params.fileName,
       fileSizeBytes: stats.size,
@@ -83,7 +84,10 @@ export class BackupService {
       }
     }
 
-    return manifests.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return manifests.sort((a, b) => {
+      const diff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      return diff !== 0 ? diff : b.fileName.localeCompare(a.fileName);
+    });
   }
 
   pruneOldBackups(): string[] {
