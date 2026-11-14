@@ -1,7 +1,6 @@
 import * as readline from 'readline';
-import * as path from 'path';
 import {
-  loadProblems,
+  PROBLEMS,
   selectRandomProblem,
   submitCode,
   HintService,
@@ -12,29 +11,19 @@ import {
   type Difficulty,
 } from '@dsa-portal/core';
 
-const PROBLEMS_DIR = path.join(__dirname, '..', 'problems');
-
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-let problems: Problem[] = [];
+// Same validated problem set the server's in-memory mode uses (core/problems).
+const problems: Problem[] = PROBLEMS;
 const recentIds: string[] = [];
 const MAX_RECENT = 5;
 const stats = { attempted: 0, solved: 0 };
 
 const hintService = new HintService();
 const solutionService = new SolutionService();
-
-function load() {
-  try {
-    problems = loadProblems(PROBLEMS_DIR);
-  } catch (err) {
-    console.error('Failed to load problems:', err);
-    process.exit(1);
-  }
-}
 
 function prompt(question: string): Promise<string> {
   return new Promise((resolve) => rl.question(question, resolve));
@@ -104,13 +93,18 @@ async function runSubmission(p: Problem) {
 
   const result: ExecutionResult = submitCode({ problem: p, userCode });
   stats.attempted += 1;
-  if (result.passed === result.total) {
+  const passedCount = result.perTest.filter((r) => r.passed).length;
+  if (result.status === 'passed') {
     stats.solved += 1;
-    console.log(`\n✅ All ${result.passed}/${result.total} test cases passed!`);
+    console.log(`\n✅ All ${passedCount}/${result.perTest.length} test cases passed!`);
+  } else if (result.status === 'timeout') {
+    console.log(`\n⏱️  Submission timed out (${passedCount}/${result.perTest.length} passed).`);
+  } else if (result.status === 'error') {
+    console.log(`\n💥 Submission errored (${passedCount}/${result.perTest.length} passed).`);
   } else {
-    console.log(`\n❌ ${result.passed}/${result.total} test cases passed.`);
+    console.log(`\n❌ ${passedCount}/${result.perTest.length} test cases passed.`);
   }
-  result.results.forEach((r: ExecutionResult['results'][number], i: number) => {
+  result.perTest.forEach((r: ExecutionResult['perTest'][number], i: number) => {
     const status = r.passed ? '✅' : '❌';
     console.log(`${status} Test ${i + 1}: ${r.passed ? 'passed' : 'failed'}`);
     if (!r.passed) {
@@ -141,7 +135,6 @@ async function showSolution(p: Problem) {
 }
 
 async function main() {
-  load();
   console.log('Welcome to DSA Practice CLI');
 
   for (;;) {

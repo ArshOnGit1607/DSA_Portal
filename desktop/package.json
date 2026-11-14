@@ -2,11 +2,66 @@
   "name": "@dsa-portal/desktop",
   "private": true,
   "version": "0.0.1",
+  "description": "DSA Practice desktop app (Electron): the web UI plus an offline practice engine.",
+  "main": "dist/main.js",
   "scripts": {
-    "dev": "electron .",
-    "build": "electron-builder"
+    "build": "cd .. && npm run build -w core && npm run build -w web && cd desktop && node build.mjs",
+    "build:main": "node build.mjs",
+    "start": "electron .",
+    "dev": "node build.mjs && electron .",
+    "test:e2e": "playwright test",
+    "test:e2e:ci": "npm run build && playwright test",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@dsa-portal/core": "*"
   },
   "devDependencies": {
-    "electron": "^28.0.0"
-  }
+    "@dsa-portal/ui-core": "*",
+    "@playwright/test": "^1.65.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3",
+    "esbuild": "^0.21.5"
+  },
+  "build": {
+    "appId": "dev.dsaportal.desktop",
+    "productName": "DSA Practice",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.education",
+      "artifactName": "DSA-Practice-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "DSA-Practice-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Education",
+      "artifactName": "DSA-Practice-${version}-${arch}.${ext}"
+    },
+    "electronVersion": "28.3.3",
+    "asarUnpack": [
+      "node_modules/@dsa-portal/core/**"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "npmRebuild": false
+  },
+  "author": "DSA Portal team"
 }

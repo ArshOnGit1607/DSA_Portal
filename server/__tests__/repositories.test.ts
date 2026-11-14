@@ -126,7 +126,9 @@ describe('PostgresSubmissionRepository', () => {
     expect(sub?.id).toBe('sub-uuid');
     expect(sub?.problemId).toBe('two-sum');
     expect(sub?.status).toBe('judged');
-    expect(sub?.result?.passed).toBe(2);
+    // results round-trip into core's ExecutionResult (perTest), testCaseIndex is storage-only
+    expect(sub?.result?.perTest).toEqual([{ passed: true }]);
+    expect(sub?.result?.status).toBe('passed');
   });
 
   it('findByUser returns list of user submissions', async () => {

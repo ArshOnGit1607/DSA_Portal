@@ -6,6 +6,10 @@ info:
     Source of truth for /api/v1. JSON over HTTP, JWT Bearer auth.
     Never change an agreed endpoint, table column, or WebSocket event directly —
     propose changes in /docs/CHANGE_REQUESTS.md.
+
+    **Limits (Day 8, CR-023).** Every route may answer `429 RATE_LIMITED` with a `Retry-After`
+    header (requests per minute per IP, and per signed-in user). Bodies over 512 KiB get
+    `413 PAYLOAD_TOO_LARGE`. Both use the standard `Error` body. See /docs/threat-model.md.
 servers:
   - url: http://localhost:3000
     description: Local dev
@@ -243,6 +247,18 @@ components:
           format: date-time
           nullable: true
 
+    DifficultyStat:
+      type: object
+      required: [difficulty, attempted, solved]
+      properties:
+        difficulty:
+          type: string
+          enum: [Easy, Medium, Hard]
+        attempted:
+          type: integer
+        solved:
+          type: integer
+
     # ---- Leaderboard ----
     LeaderboardEntry:
       type: object
@@ -299,6 +315,32 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Submission'
+
+    # ---- Dead-letter list entry (Day 6) ----
+    FailedJob:
+      type: object
+      required: [id, problemId, userId, attempts, lastError, createdAt, failedAt]
+      properties:
+        id:
+          type: string
+        problemId:
+          type: string
+        userId:
+          type: string
+        attempts:
+          type: integer
+          description: Claims used, crashed or stalled runs included
+        lastError:
+          type: string
+          nullable: true
+          description: Why the last attempt failed
+        createdAt:
+          type: string
+          format: date-time
+        failedAt:
+          type: string
+          format: date-time
+          nullable: true
 
   ###############################################################################
   # Security schemes
@@ -411,6 +453,16 @@ paths:
                 $ref: '#/components/schemas/TokenPair'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Too many failed logins from this IP or for this account; retry after Retry-After seconds
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/auth/refresh:
     post:
@@ -661,7 +713,7 @@ paths:
     post:
       tags: [submissions]
       operationId: submissionsCreate
-      summary: Submit code for judging (enqueues to BullMQ worker)
+      summary: Submit code for judging (enqueued for a worker process)
       security:
         - bearerAuth: []
       requestBody:
@@ -690,6 +742,32 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Idempotency-Key reused with a different body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Body larger than 512 KiB (PAYLOAD_TOO_LARGE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: |
+            Retry after the Retry-After header's seconds. `error` says why:
+            `QUOTA_EXCEEDED` (this user's submissions per minute or per day),
+            `QUEUE_FULL` (backpressure) or `RATE_LIMITED` (requests per IP or user).
+            An idempotent replay is answered before any of these checks.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     get:
       tags: [submissions]
@@ -774,6 +852,7 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/StatSummary'
                   - type: object
+                    required: [streak, topics, difficulties]
                     properties:
                       streak:
                         $ref: '#/components/schemas/StreakStat'
@@ -781,6 +860,10 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/TopicStat'
+                      difficulties:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DifficultyStat'
 
   /api/v1/stats/me/topics:
     get:
@@ -803,6 +886,33 @@ paths:
                     items:
                       $ref: '#/components/schemas/TopicStat'
 
+  /api/v1/stats/me/streak:
+    get:
+      tags: [stats]
+      operationId: statsMeStreak
+      summary: Current user's streak plus the days it is built from (streak calendar)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Streak and solve days
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StreakStat'
+                  - type: object
+                    required: [days]
+                    properties:
+                      days:
+                        type: array
+                        description: UTC dates (YYYY-MM-DD), ascending, on which the user first solved a problem
+                        items:
+                          type: string
+                          format: date
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # ===========================================================================
   # Leaderboard
   # ===========================================================================
@@ -810,9 +920,18 @@ paths:
     get:
       tags: [leaderboard]
       operationId: leaderboardList
-      summary: Global leaderboard sorted by solved count then score
+      summary: Leaderboard - most problems solved, ties broken by who reached that count first
+      description: >
+        `totalScore` is Easy 1, Medium 2, Hard 3 per solved problem (shown, not used for ranking).
+        `period=week` counts only problems first solved in the last 7 days.
       security: []
       parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [week, all]
+            default: all
         - in: query
           name: cursor
           schema:
@@ -840,6 +959,8 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/LeaderboardEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   # ===========================================================================
   # Daily challenge
@@ -848,7 +969,7 @@ paths:
     get:
       tags: [daily]
       operationId: dailyGet
-      summary: Get today's daily challenge problem
+      summary: Get today's daily challenge problem (UTC day; the same problem for everyone)
       security:
         - bearerAuth: []
       responses:
@@ -858,6 +979,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DailyChallenge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1041,6 +1164,88 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/queue/failed:
+    get:
+      tags: [admin]
+      operationId: adminListFailedSubmissions
+      summary: Dead-letter list - submissions that failed every retry (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Failed submissions, newest failure first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FailedJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/queue/failed/{id}/requeue:
+    post:
+      tags: [admin]
+      operationId: adminRequeueFailedSubmission
+      summary: Put a failed submission back on the queue with a fresh retry budget (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submissionId, status]
+                properties:
+                  submissionId:
+                    type: string
+                  status:
+                    type: string
+                    example: queued
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   # ===========================================================================
   # Sync (offline-first push/pull)
