@@ -10,6 +10,7 @@
     "start": "electron .",
     "dev": "node build.mjs && electron .",
     "test:e2e": "playwright test",
+    "test:e2e:ci": "npm run build && playwright test",
     "dist": "electron-builder"
   },
   "dependencies": {
@@ -25,11 +26,42 @@
   "build": {
     "appId": "dev.dsaportal.desktop",
     "productName": "DSA Practice",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "package.json"],
-    "extraResources": [{ "from": "../web/dist", "to": "web" }],
-    "mac": { "target": "dmg", "category": "public.app-category.education" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage", "category": "Education" }
-  }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.education",
+      "artifactName": "DSA-Practice-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "DSA-Practice-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Education",
+      "artifactName": "DSA-Practice-${version}-${arch}.${ext}"
+    },
+    "electronVersion": "28.3.3",
+    "asarUnpack": [
+      "node_modules/@dsa-portal/core/**"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "npmRebuild": false
+  },
+  "author": "DSA Portal team"
 }
