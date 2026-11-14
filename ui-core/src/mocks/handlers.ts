@@ -14,6 +14,7 @@ export function createMockApi(baseUrl = '') {
     issued: 0,
     refreshCalls: 0,
     submissions: new Map<string, Submission & { polls: number }>(),
+    byKey: new Map<string, string>(),
     solved: new Set<string>(),
     attempted: new Set<string>(),
   };
@@ -85,7 +86,12 @@ export function createMockApi(baseUrl = '') {
       const b = (await request.json()) as { problemId: string; code: string };
       const p = find(b.problemId);
       if (!p) return err(404, 'NOT_FOUND', 'Problem not found');
+      // Like the server: a retry with the same Idempotency-Key returns the first submission.
+      const key = request.headers.get('idempotency-key');
+      const replay = key ? state.byKey.get(key) : undefined;
+      if (replay) return HttpResponse.json({ submissionId: replay, status: state.submissions.get(replay)!.status }, { status: 202 });
       const id = crypto.randomUUID();
+      if (key) state.byKey.set(key, id);
       const ok = b.code !== p.starterCode && !b.code.includes('WRONG');
       const total = p.testCases.length;
       state.submissions.set(id, {
@@ -124,7 +130,13 @@ export function createMockApi(baseUrl = '') {
           .filter((d) => d.attempted > 0),
       })
     ),
-    http.get(u('/leaderboard'), () => HttpResponse.json({ data: mockLeaderboard, nextCursor: null })),
+    http.get(u('/leaderboard'), ({ request }) => {
+      // Opaque offset cursor, like the server.
+      const q = new URL(request.url).searchParams;
+      const from = Number(q.get('cursor') ?? 0);
+      const to = from + Number(q.get('limit') ?? 20);
+      return HttpResponse.json({ data: mockLeaderboard.slice(from, to), nextCursor: to < mockLeaderboard.length ? String(to) : null });
+    }),
     http.get(u('/daily-challenge'), () => HttpResponse.json({ date: new Date().toISOString().slice(0, 10), problemId: mockProblems[0].id, problem: mockProblems[0] })),
   ];
 

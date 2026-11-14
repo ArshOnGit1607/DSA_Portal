@@ -3,7 +3,10 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 import { ApiError, type ApiClient } from '../api/client';
 import type { DsaApi, Difficulty, Problem, StatsMe, StreakDetail, Submission, TokenPair, User } from '../api/dsa-api';
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** User-facing error text; a network failure gets a plain sentence instead of "Failed to fetch". */
+export const errorMessage = (e: unknown) =>
+  e instanceof ApiError && e.status === 0 ? 'No connection to the server. Check your network and try again.' : e instanceof Error ? e.message : String(e);
+const message = errorMessage;
 
 // ---------------------------------------------------------------- auth
 export interface AuthState {
@@ -146,9 +149,12 @@ export function createProblemStore(api: DsaApi): StoreApi<ProblemState> {
 
 // ---------------------------------------------------------------- submission
 export interface SubmissionState {
-  status: 'idle' | 'submitting' | 'judging' | 'done' | 'error';
+  /** 'queued': no connection, the submission waits in the sync outbox. */
+  status: 'idle' | 'submitting' | 'judging' | 'done' | 'error' | 'queued';
   current: Submission | null;
   error: string | null;
+  /** Outbox key of the submission queued offline, so the page can follow it until it syncs. */
+  queuedKey: string | null;
   submit(problemId: string, code: string): Promise<void>;
   reset(): void;
 }
@@ -168,6 +174,8 @@ export function createSubmissionStore(
     onJudged?: (s: Submission) => void;
     sleep?: (ms: number) => Promise<void>;
     waitBetweenPolls?: (target: { submissionId: string; problemId: string }) => Promise<unknown>;
+    /** Called instead of failing when the network is down (createDsa passes the sync outbox). */
+    onOffline?: (s: { problemId: string; code: string; key: string }) => void;
   } = {}
 ): StoreApi<SubmissionState> {
   const pollMs = opts.pollMs ?? 750;
@@ -179,16 +187,18 @@ export function createSubmissionStore(
     status: 'idle',
     current: null,
     error: null,
+    queuedKey: null,
     reset() {
       run++;
-      set({ status: 'idle', current: null, error: null });
+      set({ status: 'idle', current: null, error: null, queuedKey: null });
     },
     async submit(problemId, code) {
       const mine = ++run;
-      set({ status: 'submitting', current: null, error: null });
+      set({ status: 'submitting', current: null, error: null, queuedKey: null });
+      // One key per click: a retry after a timeout (or an outbox replay) can't create a second submission.
+      const key = uuid();
       try {
-        // One key per click: a retry after a timeout can't create a second submission.
-        const { submissionId } = await api.submit({ problemId, code }, uuid());
+        const { submissionId } = await api.submit({ problemId, code }, key);
         set({ status: 'judging' });
         const deadline = Date.now() + timeoutMs;
         while (mine === run) {
@@ -204,7 +214,12 @@ export function createSubmissionStore(
           await wait({ submissionId, problemId });
         }
       } catch (e) {
-        if (mine === run) set({ status: 'error', error: message(e) });
+        if (mine !== run) return;
+        if (e instanceof ApiError && e.status === 0 && opts.onOffline) {
+          opts.onOffline({ problemId, code, key });
+          return set({ status: 'queued', queuedKey: key });
+        }
+        set({ status: 'error', error: message(e) });
       }
     },
   }));
