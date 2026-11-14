@@ -55,9 +55,16 @@ function prepareTestFiles(userCode: string, input: unknown) {
   };
 }
 
-/** node args + options for one sandboxed child. Shared by the sync and async runners. */
-function childCommand(codePath: string, inputPath: string, options: Required<SandboxOptions>) {
-  const args = [SANDBOX_EXEC_PATH, codePath, inputPath, String(options.outputCap)];
+/** node args + options for one sandboxed child. Shared by the sync and async runners (exported for tests). */
+export function childCommand(codePath: string, inputPath: string, options: Required<SandboxOptions>) {
+  // Node's permission model as a second wall behind the vm: even code that escaped the context could only
+  // read the wrapper and this test's own files (no fs writes, no child processes, no worker threads).
+  // Plain `node` only: Electron 28 (desktop, CR-018) is Node 18 and has no permission model.
+  const permissions =
+    options.nodePath === DEFAULTS.nodePath
+      ? ['--experimental-permission', `--allow-fs-read=${SANDBOX_EXEC_PATH}`, `--allow-fs-read=${path.dirname(codePath)}`]
+      : [];
+  const args = [...permissions, SANDBOX_EXEC_PATH, codePath, inputPath, String(options.outputCap)];
   const execOptions = {
     encoding: 'utf8' as const,
     timeout: options.perTestTimeoutMs,

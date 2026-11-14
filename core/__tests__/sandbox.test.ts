@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
-import { submitCodeSandbox, submitCodeSandboxAsync } from '../src/sandbox';
+import { childCommand, submitCodeSandbox, submitCodeSandboxAsync } from '../src/sandbox';
+import { spawnSync } from 'child_process';
+import os from 'os';
 import { loadProblems } from '../src/problem-loader';
 
 import path from 'path';
@@ -263,4 +265,33 @@ describe('nodePath / extraEnv (CR-018: desktop runs the child with its own binar
     // With the override honoured it would run until the 5 s timeout; the 64 MB cap kills it first.
     expect(result.status).toBe('error');
   }, 60000);
+});
+
+describe('Node permission model on the child (Day 8: reduced privileges)', () => {
+  const opts = { perTestTimeoutMs: 2000, totalTimeoutMs: 30000, memoryLimitMb: 64, outputCap: 50000, nodePath: 'node', extraEnv: {} };
+  const code = path.join(os.tmpdir(), 'dsa-sandbox-x', 'code.js');
+
+  it('runs plain node with fs reads limited to the wrapper and the test dir', () => {
+    const { args } = childCommand(code, code.replace('code.js', 'input.json'), opts);
+    expect(args[0]).toBe('--experimental-permission');
+    expect(args.filter((a) => a.startsWith('--allow-fs-read='))).toEqual([
+      expect.stringMatching(/sandbox-exec\.js$/),
+      `--allow-fs-read=${path.dirname(code)}`,
+    ]);
+    expect(args.some((a) => /allow-(fs-write|child-process|worker)/.test(a))).toBe(false);
+  });
+
+  it('those flags really block reading other files and spawning processes', () => {
+    const { args } = childCommand(code, code, opts);
+    const flags = args.filter((a) => a.startsWith('--'));
+    for (const script of ['require("fs").readFileSync("/etc/hosts")', 'require("child_process").execSync("id")']) {
+      const r = spawnSync('node', [...flags, '-e', script], { encoding: 'utf8' });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/ERR_ACCESS_DENIED|restricted/);
+    }
+  });
+
+  it('leaves a custom binary (Electron, no permission model) without the flags', () => {
+    expect(childCommand(code, code, { ...opts, nodePath: '/x/electron' }).args[0]).toMatch(/sandbox-exec\.js$/);
+  });
 });
