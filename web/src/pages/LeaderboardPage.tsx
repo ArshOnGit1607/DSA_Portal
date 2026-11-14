@@ -2,7 +2,7 @@ import { useAuth, useLeaderboard } from '@dsa-portal/ui-core';
 
 /** Public leaderboard; refreshes itself when the server pushes `leaderboard:update`. */
 export function LeaderboardPage() {
-  const { entries, loading, error, reload } = useLeaderboard(50);
+  const { entries, loading, error, reload, nextCursor, loadMore } = useLeaderboard(50);
   const { user } = useAuth();
   return (
     <section className="card" aria-labelledby="lb-title">
@@ -13,7 +13,12 @@ export function LeaderboardPage() {
       </div>
       <p className="muted">Ranked by problems solved, then score (Easy 1, Medium 2, Hard 3).</p>
       {error && <p role="alert" className="error">Could not load the leaderboard: {error}</p>}
-      {loading && <p role="status">Loading…</p>}
+      {loading && entries.length === 0 && (
+        <div aria-busy="true">
+          <span className="sr-only" role="status">Loading…</span>
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton skeleton-row" />)}
+        </div>
+      )}
       {!loading && !error && entries.length === 0 && <p>No one has solved a problem yet. Be the first!</p>}
       {entries.length > 0 && (
         <table className="results">
@@ -31,6 +36,11 @@ export function LeaderboardPage() {
             ))}
           </tbody>
         </table>
+      )}
+      {nextCursor && (
+        <div className="row end">
+          <button type="button" onClick={() => void loadMore()} disabled={loading}>{loading ? 'Loading…' : 'Load more'}</button>
+        </div>
       )}
     </section>
   );

@@ -40,7 +40,16 @@ fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md
 
 .badge { display: inline-block; padding: 2px var(--space-sm); border-radius: var(--radius-pill); border: 1px solid var(--color-border); font-size: var(--font-xs); font-weight: 600; }
 .badge.easy { color: var(--color-easy); } .badge.medium { color: var(--color-medium); } .badge.hard { color: var(--color-hard); }
-.badge.online { color: var(--color-success); } .badge.offline { color: var(--color-warning); }
+.badge.online { color: var(--color-success); } .badge.offline { color: var(--color-warning); } .badge.syncing { color: var(--color-primary); } .badge.problem { color: var(--color-danger); }
+
+.sync { position: relative; }
+.sync > summary { list-style: none; cursor: pointer; border-radius: var(--radius-pill); }
+.sync > summary::-webkit-details-marker { display: none; }
+.sync-panel { position: absolute; right: 0; top: calc(100% + var(--space-xs)); width: min(420px, 90vw); z-index: 20; margin: 0; padding: var(--space-lg); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); }
+.sync-panel h2 { margin-top: 0; }
+.queue { list-style: none; padding: 0; max-height: 50vh; overflow: auto; }
+.queue li { border-top: 1px solid var(--color-border); padding: var(--space-sm) 0; }
+.small { font-size: var(--font-xs); }
 
 .problem-layout { display: grid; grid-template-columns: minmax(300px, 2fr) 3fr; gap: var(--space-lg); height: calc(100vh - 120px); }
 .problem-text { overflow: auto; margin: 0; }
@@ -67,4 +76,5 @@ tr.me { background: var(--color-surfaceRaised); font-weight: 700; }
 .cal-day { width: 14px; height: 14px; border-radius: 3px; background: var(--color-bg); border: 1px solid var(--color-border); }
 .cal-day.on { background: var(--color-chart1); border-color: var(--color-chart1); }
 .skeleton { background: var(--color-surface); animation: pulse 1.2s ease-in-out infinite; }
+.skeleton-row { height: 36px; border-radius: var(--radius-sm); margin-bottom: var(--space-xs); }
 @keyframes pulse { 50% { opacity: 0.5; } }

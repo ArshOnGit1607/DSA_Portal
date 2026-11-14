@@ -1,14 +1,21 @@
-import { useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useStore } from 'zustand';
+import { useEffect, useRef } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, useSettings } from '@dsa-portal/ui-core';
-import { connectivity, desktop } from '../platform';
+import { desktop } from '../platform';
+import { SyncStatus } from './SyncStatus';
 
 export function Layout() {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useSettings();
-  const { online } = useStore(connectivity);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  const firstRender = useRef(true);
+  // Focus management: after a route change, screen readers and keyboard users start at the new page.
+  useEffect(() => {
+    if (firstRender.current) return void (firstRender.current = false);
+    if (!mainRef.current?.contains(document.activeElement)) mainRef.current?.focus();
+  }, [pathname]);
   // Cmd/Ctrl+K from the desktop menu: back to the topic picker (HomePage focuses it).
   useEffect(() => desktop?.onMenu((a) => a === 'switch-topic' && navigate('/')), [navigate]);
   return (
@@ -22,11 +29,7 @@ export function Layout() {
           <NavLink to="/leaderboard">Leaderboard</NavLink>
         </nav>
         <span className="spacer" />
-        {desktop && (
-          <span className={`badge ${online ? 'online' : 'offline'}`} role="status">
-            {online ? '● Online' : '○ Offline: local practice'}
-          </span>
-        )}
+        <SyncStatus />
         <label>
           <span className="sr-only">Theme</span>
           <select value={theme} onChange={(e) => setTheme(e.target.value as typeof theme)}>
@@ -43,7 +46,7 @@ export function Layout() {
           <NavLink to="/login">Sign in</NavLink>
         )}
       </header>
-      <main id="main" tabIndex={-1}>
+      <main id="main" tabIndex={-1} ref={mainRef}>
         <Outlet />
       </main>
     </>

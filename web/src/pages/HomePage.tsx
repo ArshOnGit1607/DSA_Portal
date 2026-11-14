@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useStore } from 'zustand';
-import { useDsa, useProblem, type Difficulty } from '@dsa-portal/ui-core';
-import { connectivity, desktop } from '../platform';
+import { Link, useNavigate } from 'react-router-dom';
+import { useDsa, useProblem, useSync, type Difficulty, type ProblemSummary } from '@dsa-portal/ui-core';
+import { desktop } from '../platform';
 import { DailyChallengeCard } from '../components/DailyChallengeCard';
 
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard'];
@@ -11,18 +10,32 @@ const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard'];
 export function HomePage() {
   const { api, stores } = useDsa();
   const { topic, difficulty, setFilters, loadRandom, loading, error } = useProblem();
-  const { online } = useStore(connectivity);
+  const { online } = useSync();
   const [topics, setTopics] = useState<string[] | null>(null);
+  const [saved, setSaved] = useState<ProblemSummary[] | null>(null);
   const [topicsError, setTopicsError] = useState<string | null>(null);
   const navigate = useNavigate();
   const topicRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
+    setTopicsError(null);
     api.topics().then(setTopics, (e: Error) => setTopicsError(e.message));
   }, [api, online]);
+  // Browser offline: list what this device has (desktop bundles every problem, so it just keeps the picker).
+  useEffect(() => {
+    if (online || desktop) return setSaved(null);
+    api.problems({ topic: topic ?? undefined, difficulty: difficulty ?? undefined }).then((p) => setSaved(p.data), () => setSaved([]));
+  }, [api, online, topic, difficulty]);
   // Cmd/Ctrl+K (desktop menu) jumps here and focuses the topic picker.
   useEffect(() => desktop?.onMenu((a) => a === 'switch-topic' && topicRef.current?.focus()), []);
-  useEffect(() => topicRef.current?.focus(), [topics]);
+  // Focus the picker once when it first fills; refetches after a reconnect must not steal focus.
+  const focused = useRef(false);
+  useEffect(() => {
+    if (topics && !focused.current) {
+      focused.current = true;
+      topicRef.current?.focus();
+    }
+  }, [topics]);
 
   const start = async () => {
     await loadRandom();
@@ -58,6 +71,20 @@ export function HomePage() {
       {error && <p role="alert" className="error">{error}</p>}
       <button className="primary" onClick={start} disabled={loading}>{loading ? 'Finding a problem…' : 'Start'}</button>
     </section>
+    {saved && (
+      <section className="card narrow" aria-labelledby="saved-title">
+        <h2 id="saved-title">On this device</h2>
+        {saved.length === 0 ? (
+          <p className="muted">No saved problems match. Problems you open while online are kept for offline reading.</p>
+        ) : (
+          <ul>
+            {saved.map((p) => (
+              <li key={p.id}><Link to={`/problem/${encodeURIComponent(p.id)}`}>{p.title}</Link> <span className={`badge ${p.difficulty.toLowerCase()}`}>{p.difficulty}</span></li>
+            ))}
+          </ul>
+        )}
+      </section>
+    )}
     </>
   );
 }
