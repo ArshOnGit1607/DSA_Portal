@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useProblem, useSettings, useSubmission } from '@dsa-portal/ui-core';
+import { useStore } from 'zustand';
+import { describeQueued, useProblem, useSettings, useSubmissionStatus, useSync } from '@dsa-portal/ui-core';
+import { themeMode } from '../theme';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ResultsPanel, type ResultsView } from '../components/ResultsPanel';
 import { desktop } from '../platform';
@@ -12,12 +14,14 @@ const CodeEditor = lazy(() => import('../components/CodeEditor').then((m) => ({ 
 export function ProblemPage() {
   const { id = '' } = useParams();
   const p = useProblem();
-  const sub = useSubmission();
+  const sub = useSubmissionStatus();
   const { editorFontSize } = useSettings();
   const [run, setRun] = useState<ResultsView | null>(null);
   const [showResults, setShowResults] = useState<'run' | 'submit' | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const dark = document.documentElement.dataset.theme === 'dark';
+  const dark = useStore(themeMode).mode === 'dark';
+  const { queue } = useSync();
+  const queued = sub.queuedKey ? queue.find((q) => q.key === sub.queuedKey) : undefined;
 
   useEffect(() => {
     if (p.problem?.id !== id) void p.load(id);
@@ -63,7 +67,15 @@ export function ProblemPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [doRun]);
 
-  if (p.loading || (!p.problem && !p.error)) return <p role="status">Loading problem…</p>;
+  if (p.loading || (!p.problem && !p.error)) {
+    return (
+      <div className="problem-layout" aria-busy="true">
+        <span className="sr-only" role="status">Loading problem…</span>
+        <div className="card skeleton" />
+        <div className="card skeleton" />
+      </div>
+    );
+  }
   if (!p.problem) return <p role="alert" className="error">{p.error}</p>;
   const problem = p.problem;
 
@@ -129,7 +141,22 @@ export function ProblemPage() {
         </div>
         <div className="card results-card">
           <h2>Results</h2>
-          <ResultsPanel view={showResults === 'submit' ? submitView : showResults === 'run' ? run : null} />
+          {(sub.status === 'submitting' || sub.status === 'judging') && (
+            <p className="muted">{sub.live ? 'Live: the result appears as soon as it is judged.' : 'Checking for the result every second…'}</p>
+          )}
+          {showResults === 'submit' && sub.status === 'queued' ? (
+            // Follows the outbox item: queued → syncing → the server's verdict.
+            <p role="status" className={queued?.state === 'synced' ? 'success' : queued?.state === 'conflict' || queued?.state === 'rejected' ? 'error' : undefined}>
+              {!queued || queued.state === 'pending'
+                ? 'You are offline. Your submission is queued on this device and will be judged when you reconnect. Watch the sync status at the top.'
+                : `${describeQueued(queued)}${queued.message ? `. ${queued.message}` : ''}`}
+            </p>
+          ) : (
+            <ResultsPanel view={showResults === 'submit' ? submitView : showResults === 'run' ? run : null} />
+          )}
+          {showResults === 'submit' && sub.status === 'done' && sub.current?.userId === 'offline' && (
+            <p className="muted">Judged on this computer. It syncs to your account when you reconnect; the server&apos;s result counts.</p>
+          )}
         </div>
       </section>
     </div>

@@ -9,19 +9,20 @@ import { SEED_PROBLEMS } from '../../server/src/db/seeds/problems-data';
 /**
  * The offline half of the desktop app: /core picks problems and gives hints, core's sandbox judges
  * in a utility process. Problems are the 40 seed problems bundled into the app.
- * shortcut: progress is a JSON file in userData until Person 2's SQLite storage + SyncEngine exist (Day 8 sync).
+ * Offline submissions reach the server through the renderer's sync outbox (ui-core/src/sync.ts).
+ * shortcut: solved ids live in a JSON file in userData until Person 2's SQLite storage exists (CR-030).
  */
 export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
   const byId = new Map(problems.map((p) => [p.id, p]));
   const hints = new HintService();
   const progressFile = () => path.join(app.getPath('userData'), 'offline-progress.json');
-  let progress: { solved: string[]; submissions: Submission[] } | null = null;
+  let progress: { solved: string[] } | null = null;
   const loadProgress = () => {
     if (progress) return progress;
     try {
       progress = JSON.parse(fs.readFileSync(progressFile(), 'utf8'));
     } catch {
-      progress = { solved: [], submissions: [] };
+      progress = { solved: [] };
     }
     return progress!;
   };
@@ -40,9 +41,7 @@ export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
   const pending = new Map<number, { resolve(r: ExecutionResult): void; reject(e: Error): void }>();
   function sandbox(): UtilityProcess {
     if (worker) return worker;
-    // GUI apps on macOS start with a minimal PATH; core's sandbox runs `node` from PATH (CR-018).
-    const PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin'].filter(Boolean).join(path.delimiter);
-    worker = utilityProcess.fork(path.join(__dirname, 'sandbox-worker.js'), [], { env: { PATH }, serviceName: 'dsa-sandbox' });
+    worker = utilityProcess.fork(path.join(__dirname, 'sandbox-worker.js'), [], { serviceName: 'dsa-sandbox' });
     worker.on('message', (m: { id: number; result?: ExecutionResult; error?: string }) => {
       const p = pending.get(m.id);
       pending.delete(m.id);
@@ -60,7 +59,8 @@ export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
     new Promise<ExecutionResult>((resolve, reject) => {
       const id = ++nextId;
       pending.set(id, { resolve, reject });
-      sandbox().postMessage({ id, problem, code });
+      // The app's own Electron binary runs each test as plain Node: no Node install needed (CR-018).
+      sandbox().postMessage({ id, problem, code, nodePath: process.execPath });
     });
 
   const get = (id: string) => {
@@ -95,7 +95,6 @@ export function createOfflineEngine(problems: CoreProblem[] = SEED_PROBLEMS) {
         passed: results.filter((x) => x.passed).length, total: results.length, results, createdAt: now, judgedAt: now,
       };
       const prog = loadProgress();
-      prog.submissions.push(s); // kept for Day 8 sync to the server
       if (r.status === 'passed' && !prog.solved.includes(problemId)) prog.solved.push(problemId);
       await saveProgress();
       return s;

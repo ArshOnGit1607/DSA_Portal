@@ -201,7 +201,7 @@ export interface paths {
         /** List current user's submissions (keyset pagination) */
         get: operations["submissionsList"];
         put?: never;
-        /** Submit code for judging (enqueues to BullMQ worker) */
+        /** Submit code for judging (enqueued for a worker process) */
         post: operations["submissionsCreate"];
         delete?: never;
         options?: never;
@@ -260,6 +260,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stats/me/streak": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current user's streak plus the days it is built from (streak calendar) */
+        get: operations["statsMeStreak"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaderboard": {
         parameters: {
             query?: never;
@@ -267,7 +284,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Global leaderboard sorted by solved count then score */
+        /**
+         * Leaderboard - most problems solved, ties broken by who reached that count first
+         * @description `totalScore` is Easy 1, Medium 2, Hard 3 per solved problem (shown, not used for ranking). `period=week` counts only problems first solved in the last 7 days.
+         */
         get: operations["leaderboardList"];
         put?: never;
         post?: never;
@@ -284,7 +304,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get today's daily challenge problem */
+        /** Get today's daily challenge problem (UTC day; the same problem for everyone) */
         get: operations["dailyGet"];
         put?: never;
         post?: never;
@@ -324,6 +344,40 @@ export interface paths {
         put?: never;
         /** Add test cases to a problem (admin only) */
         post: operations["adminAddTestCases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/queue/failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dead-letter list - submissions that failed every retry (admin only) */
+        get: operations["adminListFailedSubmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/queue/failed/{id}/requeue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put a failed submission back on the queue with a fresh retry budget (admin only) */
+        post: operations["adminRequeueFailedSubmission"];
         delete?: never;
         options?: never;
         head?: never;
@@ -478,6 +532,12 @@ export interface components {
             /** Format: date-time */
             lastSolvedAt: string | null;
         };
+        DifficultyStat: {
+            /** @enum {string} */
+            difficulty: "Easy" | "Medium" | "Hard";
+            attempted: number;
+            solved: number;
+        };
         LeaderboardEntry: {
             /** Format: uuid */
             userId: string;
@@ -499,6 +559,19 @@ export interface components {
         SyncPull: {
             problems: components["schemas"]["ProblemSummary"][];
             submissions: components["schemas"]["Submission"][];
+        };
+        FailedJob: {
+            id: string;
+            problemId: string;
+            userId: string;
+            /** @description Claims used, crashed or stalled runs included */
+            attempts: number;
+            /** @description Why the last attempt failed */
+            lastError: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            failedAt: string | null;
         };
     };
     responses: {
@@ -602,6 +675,16 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description Too many failed logins from this IP or for this account; retry after Retry-After seconds */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     authRefresh: {
@@ -882,6 +965,39 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description Idempotency-Key reused with a different body */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Body larger than 512 KiB (PAYLOAD_TOO_LARGE) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description Retry after the Retry-After header's seconds. `error` says why:
+             *     `QUOTA_EXCEEDED` (this user's submissions per minute or per day),
+             *     `QUEUE_FULL` (backpressure) or `RATE_LIMITED` (requests per IP or user).
+             *     An idempotent replay is answered before any of these checks.
+             */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     submissionsGetById: {
@@ -924,8 +1040,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatSummary"] & {
-                        streak?: components["schemas"]["StreakStat"];
-                        topics?: components["schemas"]["TopicStat"][];
+                        streak: components["schemas"]["StreakStat"];
+                        topics: components["schemas"]["TopicStat"][];
+                        difficulties: components["schemas"]["DifficultyStat"][];
                     };
                 };
             };
@@ -953,9 +1070,34 @@ export interface operations {
             };
         };
     };
+    statsMeStreak: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Streak and solve days */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreakStat"] & {
+                        /** @description UTC dates (YYYY-MM-DD), ascending, on which the user first solved a problem */
+                        days: string[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     leaderboardList: {
         parameters: {
             query?: {
+                period?: "week" | "all";
                 /** @description Opaque cursor from previous page nextCursor */
                 cursor?: string;
                 /** @description Page size */
@@ -978,6 +1120,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
         };
     };
     dailyGet: {
@@ -998,6 +1141,7 @@ export interface operations {
                     "application/json": components["schemas"]["DailyChallenge"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -1149,6 +1293,79 @@ export interface operations {
                     };
                 };
             };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListFailedSubmissions: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Failed submissions, newest failure first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CursorPage"] & {
+                        data?: components["schemas"]["FailedJob"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    adminRequeueFailedSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requeued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        submissionId: string;
+                        /** @example queued */
+                        status: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             /** @description Admin required */
             403: {
                 headers: {

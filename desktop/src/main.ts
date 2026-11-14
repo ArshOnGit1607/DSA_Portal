@@ -21,7 +21,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
-  `connect-src 'self' ${API}`,
+  `connect-src 'self' ${API} ${API.replace(/^http/, 'ws')}`, // REST + Socket.IO
   "object-src 'none'",
   "base-uri 'none'",
   "frame-ancestors 'none'",

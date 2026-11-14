@@ -1,12 +1,10 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { tokens, useSettings, useStats, type StreakDetail } from '@dsa-portal/ui-core';
+import { useStore } from 'zustand';
+import { tokens, useStats, type StreakDetail } from '@dsa-portal/ui-core';
+import { themeMode } from '../theme';
 
 // Categorical pair validated with the dataviz palette checker (CVD + contrast) on both surfaces.
-const useColors = () => {
-  useSettings(); // re-render on theme change
-  const mode = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
-  return tokens.color[mode];
-};
+const useColors = () => tokens.color[useStore(themeMode).mode]; // re-renders on any theme change, system included
 
 const pct = (solved: number, attempted: number) => (attempted ? `${Math.round((solved / attempted) * 100)}%` : '–');
 

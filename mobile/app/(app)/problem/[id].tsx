@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useProblem, useSubmission } from '@dsa-portal/ui-core';
+import { describeQueued, useProblem, useSubmissionStatus, useSync } from '@dsa-portal/ui-core';
 import { CodeEditor } from '../../../src/components/CodeEditor';
 import { Results } from '../../../src/components/Results';
 import { Body, Button, Card, ErrorText, H1, H2 } from '../../../src/components/ui';
@@ -10,9 +10,11 @@ import { MONO, useTheme } from '../../../src/theme';
 export default function ProblemScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const p = useProblem();
-  const sub = useSubmission();
+  const sub = useSubmissionStatus();
   const { c, space } = useTheme();
   const { width } = useWindowDimensions();
+  const { queue } = useSync();
+  const queued = sub.queuedKey ? queue.find((q) => q.key === sub.queuedKey) : undefined;
   const wide = width >= 768; // tablets / landscape: description and editor side by side
 
   useEffect(() => {
@@ -76,7 +78,11 @@ export default function ProblemScreen() {
       <Card>
         <H2>Results</H2>
         {sub.status === 'idle' && <Body muted>Submit to run your code on the server against all test cases.</Body>}
-        {judging && <Body muted>{sub.current?.status === 'running' ? 'Running…' : 'Queued…'}</Body>}
+        {judging && <Body muted>{sub.current?.status === 'running' ? 'Running…' : 'Queued…'} {sub.live ? '(live)' : '(checking every second)'}</Body>}
+        {sub.status === 'queued' && (!queued || queued.state === 'pending') && <Body muted>You are offline. Your submission is queued on this phone and will be judged when you reconnect (see the bar at the top).</Body>}
+        {sub.status === 'queued' && queued && queued.state !== 'pending' && (
+          <Body tone={queued.state === 'synced' ? 'success' : queued.state === 'syncing' ? undefined : 'danger'}>{describeQueued(queued)}{queued.message ? `. ${queued.message}` : ''}</Body>
+        )}
         {sub.status === 'error' && <ErrorText>{sub.error}</ErrorText>}
         {sub.status === 'done' && sub.current?.status === 'failed' && <ErrorText>The judge failed to run this submission. Please try again.</ErrorText>}
         {sub.status === 'done' && sub.current?.status === 'judged' && <Results submission={sub.current} />}

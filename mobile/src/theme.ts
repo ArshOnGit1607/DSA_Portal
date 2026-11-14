@@ -1,9 +1,11 @@
 import { useColorScheme } from 'react-native';
-import { tokens } from '@dsa-portal/ui-core';
+import { tokens, useSettings } from '@dsa-portal/ui-core';
 
-/** The same design tokens as web/desktop; numbers are density-independent pixels here. */
+/** The same design tokens as web/desktop; numbers are density-independent pixels here. Follows Settings → Theme. */
 export function useTheme() {
-  const mode = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const system = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const { theme } = useSettings();
+  const mode = theme === 'system' ? system : theme;
   return { mode, c: tokens.color[mode], space: tokens.space, radius: tokens.radius, font: tokens.font };
 }
 

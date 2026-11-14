@@ -5,6 +5,8 @@ import Login from '../app/login';
 import Practice from '../app/(app)/(tabs)/index';
 import ProblemScreen from '../app/(app)/problem/[id]';
 import Stats from '../app/(app)/(tabs)/stats';
+import Leaderboard from '../app/(app)/(tabs)/leaderboard';
+import Settings from '../app/(app)/(tabs)/settings';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -29,7 +31,7 @@ const judged = (passed: number): Submission => ({
 });
 
 /** The real ui-core stores on top of a fake API: screens are tested exactly as they run. */
-function setup(overrides: Partial<DsaApi> = {}) {
+function setup(overrides: Partial<DsaApi> = {}, extra: Partial<Parameters<typeof createDsa>[0]> = {}) {
   let polls = 0;
   const api = {
     login: jest.fn(async ({ password }: { password: string }) => {
@@ -44,11 +46,13 @@ function setup(overrides: Partial<DsaApi> = {}) {
     solution: async () => { throw new ApiError(403, 'SOLUTION_LOCKED', 'locked'); },
     submit: jest.fn(async () => ({ submissionId: 's1', status: 'queued' })),
     submission: async () => (polls++ === 0 ? { ...judged(0), status: 'queued' as const } : judged(1)),
+    leaderboard: async () => ({ data: [{ userId: 'x', username: 'ada', solved: 9, totalScore: 20, rank: 1 }, { userId: 'u', username: 'mia', solved: 1, totalScore: 1, rank: 2 }], nextCursor: null }),
+    dailyChallenge: async () => ({ date: '2026-11-13', problemId: 'two-sum', problem }),
     stats: async () => ({ attempted: 1, solved: 1, totalProblems: 40, topics: [{ topic: 'Arrays', attempted: 1, solved: 1 }], difficulties: [{ difficulty: 'Easy' as const, attempted: 1, solved: 1 }], streak: { currentStreak: 2, longestStreak: 4, lastSolvedAt: null } }),
     streak: async () => ({ currentStreak: 2, longestStreak: 4, lastSolvedAt: null, days: ['2026-11-12'] }),
     ...overrides,
   } as unknown as DsaApi;
-  const dsa = createDsa({ baseUrl: 'http://api.test', refresh: async () => null, wrapApi: () => api, pollMs: 1 });
+  const dsa = createDsa({ baseUrl: 'http://api.test', refresh: async () => null, wrapApi: () => api, pollMs: 1, ...extra });
   const ui = (el: React.ReactElement) => render(<DsaProvider value={dsa}>{el}</DsaProvider>);
   return { dsa, api, ui };
 }
@@ -108,6 +112,23 @@ describe('Problem screen', () => {
   });
 });
 
+describe('Day 7: leaderboard + daily challenge', () => {
+  it('lists ranks and marks the signed-in user', async () => {
+    const { ui, dsa } = setup();
+    await act(() => dsa.stores.auth.getState().login('mia@x.io', 'right-pass-1'));
+    ui(<Leaderboard />);
+    expect(await screen.findByLabelText('Rank 1, ada, 9 solved, score 20')).toBeTruthy();
+    expect(screen.getByLabelText('Rank 2, mia (you), 1 solved, score 1')).toBeTruthy();
+  });
+
+  it('practice shows the daily challenge and opens it', async () => {
+    const { ui } = setup();
+    ui(<Practice />);
+    fireEvent.press(await screen.findByRole('button', { name: "Solve today's challenge" }));
+    expect(mockPush).toHaveBeenCalledWith('/problem/two-sum');
+  });
+});
+
 describe('Stats screen', () => {
   it('shows tiles, accessible bars and the calendar', async () => {
     const { ui, dsa } = setup();
@@ -122,7 +143,52 @@ describe('Stats screen', () => {
   it('shows an error with a retry', async () => {
     const { ui } = setup({ stats: async () => { throw new ApiError(0, 'NETWORK_ERROR', 'Network request failed'); } });
     ui(<Stats />);
-    expect(await screen.findByText('Could not load your stats: Network request failed')).toBeTruthy();
+    expect(await screen.findByText('Could not load your stats: No connection to the server. Check your network and try again.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+});
+
+describe('Day 8: offline outbox, settings, saved problems', () => {
+  it('queues an offline submit, then Settings → Sync now judges it on the server', async () => {
+    const offline = new ApiError(0, 'NETWORK_ERROR', 'Network request failed');
+    const { ui, dsa, api } = setup();
+    await act(() => dsa.stores.auth.getState().login('mia@x.io', 'right-pass-1'));
+    (api.submit as jest.Mock).mockRejectedValueOnce(offline);
+    ui(<ProblemScreen />);
+    fireEvent.press(await screen.findByRole('button', { name: 'Submit' }));
+    expect(await screen.findByText(/Your submission is queued on this phone/)).toBeTruthy();
+    // The problem screen follows the queued item until the server has judged it (Day 9 bug 3).
+    await act(() => dsa.stores.sync.getState().syncNow());
+    expect(await screen.findByText('Synced · Accepted 1/1')).toBeTruthy();
+    screen.unmount();
+    dsa.stores.sync.setState((s) => ({ queue: s.queue.map((q) => ({ ...q, state: 'pending' as const, server: undefined })) }));
+
+    ui(<Settings />);
+    expect(screen.getByText('Online · 1 queued')).toBeTruthy();
+    expect(screen.getByText('Waiting to sync')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: 'Sync now' }));
+    expect(await screen.findByText('Synced · Accepted 1/1')).toBeTruthy();
+    // Replayed with the key of the original click, so a lost response can't double-submit.
+    const [first, replay] = (api.submit as jest.Mock).mock.calls;
+    expect(replay[1]).toBe(first[1]);
+    fireEvent.press(screen.getByRole('button', { name: 'Clear finished' }));
+    expect(await screen.findByText(/Nothing queued/)).toBeTruthy();
+  });
+
+  it('switches the theme from Settings', async () => {
+    const { ui, dsa } = setup();
+    ui(<Settings />);
+    fireEvent.press(screen.getByRole('radio', { name: 'Dark' }));
+    expect(dsa.stores.settings.getState().theme).toBe('dark');
+  });
+
+  it('lists problems saved on the phone while offline', async () => {
+    const network = { isOnline: () => false, subscribe: () => () => {} };
+    const problems = jest.fn(async () => ({ data: [{ id: 'two-sum', title: 'Two Sum', topic: 'Arrays', difficulty: 'Easy' as const }], nextCursor: null }));
+    const { ui } = setup({ problems, dailyChallenge: async () => { throw new ApiError(0, 'NETWORK_ERROR', 'offline'); } }, { network });
+    ui(<Practice />);
+    fireEvent.press(await screen.findByRole('button', { name: 'Two Sum · Easy' }));
+    expect(mockPush).toHaveBeenCalledWith('/problem/two-sum');
+    expect(screen.getByText('On this phone')).toBeTruthy();
   });
 });

@@ -1,38 +1,17 @@
 import { Platform } from 'react-native';
 import { openDatabaseAsync } from 'expo-sqlite';
-import { ApiError, createDsa, nativeRefresh, REFRESH_TOKEN_KEY, type DsaApi, type LocalStore } from '@dsa-portal/ui-core';
-import { secureStorage } from './adapters';
-import { sqliteLocalStore } from './local-store';
+import { createDsa, nativeRefresh, REFRESH_TOKEN_KEY, withProblemCache, type LocalStore } from '@dsa-portal/ui-core';
+import { netInfoStatus, secureStorage } from './adapters';
+import { sqliteKv, sqliteLocalStore } from './local-store';
 
 // The Android emulator reaches the host computer at 10.0.2.2.
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000')).replace(/\/$/, '');
 
+let db: ReturnType<typeof openDatabaseAsync> | null = null;
+const openDb = () => (db ??= openDatabaseAsync('dsa.db'));
 let store: Promise<LocalStore> | null = null;
-const localStore = () => (store ??= openDatabaseAsync('dsa.db').then(sqliteLocalStore));
-
-/**
- * Problems the user opens are cached in SQLite; when the network is down they can still be read.
- * Judging always needs the server (no local sandbox on mobile).
- */
-export function withProblemCache(http: DsaApi, local: () => Promise<LocalStore>): DsaApi {
-  const cached = async <T extends { id: string }>(load: () => Promise<T>, fallbackId?: string) => {
-    try {
-      const p = await load();
-      void local().then((s) => s.saveProblem(p as never)).catch(() => {});
-      return p;
-    } catch (e) {
-      const offline = e instanceof ApiError && e.status === 0;
-      const hit = offline && fallbackId ? await (await local()).getProblem(fallbackId) : null;
-      if (hit) return hit as unknown as T;
-      throw e;
-    }
-  };
-  return {
-    ...http,
-    problem: (id) => cached(() => http.problem(id), id),
-    randomProblem: (q) => cached(() => http.randomProblem(q)),
-  };
-}
+// Problems the user opens are cached in SQLite and readable offline; judging always needs the server.
+const localStore = () => (store ??= openDb().then(sqliteLocalStore));
 
 export const dsa = createDsa({
   baseUrl: API_URL,
@@ -45,4 +24,7 @@ export const dsa = createDsa({
     if (token) await fetch(`${API_URL}/api/v1/auth/logout`, { method: 'POST', headers: { cookie: `refresh_token=${token}` } }).catch(() => {});
   },
   wrapApi: (http) => withProblemCache(http, localStore),
+  settingsStorage: sqliteKv(openDb), // theme + offline submission outbox survive restarts
+  network: netInfoStatus(),
+  realtimeUrl: API_URL, // Socket.IO for live results; polling takes over while it is down
 });

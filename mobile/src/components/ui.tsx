@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
-import { netInfoStatus } from '../adapters';
+import { pendingCount, syncSummary, useSync } from '@dsa-portal/ui-core';
 import { useTheme } from '../theme';
 
 export function Button(props: { title: string; onPress(): void; primary?: boolean; disabled?: boolean; busy?: boolean; accessibilityHint?: string }) {
@@ -86,15 +86,25 @@ export function ErrorText({ children }: { children: ReactNode }) {
   return <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ color: c.danger, marginVertical: 8, fontSize: 15 }}>{children}</Text>;
 }
 
-/** NetInfo-driven banner; the app still opens cached problems while offline. */
-export function OfflineBanner() {
-  const { c } = useTheme();
-  const [online, setOnline] = useState(true);
-  useEffect(() => netInfoStatus().subscribe(setOnline), []);
-  if (online) return null;
+/** Connection + offline outbox at the top of every signed-in screen; hidden when online with nothing queued. */
+export function SyncBar() {
+  const { c, space } = useTheme();
+  const sync = useSync();
+  const n = pendingCount(sync);
+  const needsAttention = sync.queue.some((q) => q.state === 'conflict' || q.state === 'rejected');
+  if (sync.status === 'online' && !n && !needsAttention) return null;
+  const tone = sync.status === 'error' || needsAttention ? c.danger : sync.status === 'offline' ? c.warning : c.primary;
   return (
-    <View accessibilityRole="alert" style={[styles.banner, { backgroundColor: c.surfaceRaised, borderColor: c.warning }]}>
-      <Text style={{ color: c.text }}>○ Offline: you can read problems you opened before. Submitting needs a connection.</Text>
+    <View accessibilityRole="summary" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: c.surfaceRaised, borderColor: tone, flexDirection: 'row', alignItems: 'center', gap: space.sm }]}>
+      <Text style={{ color: c.text, flex: 1 }}>
+        {sync.status === 'offline' ? '○ ' : sync.status === 'syncing' ? '↻ ' : '● '}
+        {syncSummary(sync)}
+        {sync.status === 'offline' ? '. Opened problems still work; submissions wait here.' : ''}
+        {sync.lastError ? ` ${sync.lastError}` : needsAttention ? ' See Settings for details.' : ''}
+      </Text>
+      {n > 0 && sync.status !== 'syncing' && (
+        <Button title="Sync now" disabled={sync.status === 'offline'} onPress={() => void sync.syncNow()} />
+      )}
     </View>
   );
 }

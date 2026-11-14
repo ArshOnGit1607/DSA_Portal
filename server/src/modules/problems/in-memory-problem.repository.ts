@@ -20,4 +20,8 @@ export class InMemoryProblemRepository implements ProblemRepository {
   async save(problem: Problem) {
     this.problems.set(problem.id, problem);
   }
+
+  async delete(id: string) {
+    return this.problems.delete(id);
+  }
 }

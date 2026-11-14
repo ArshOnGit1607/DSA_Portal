@@ -1,4 +1,5 @@
 import type { LocalStore, Problem, ProblemSummary } from '@dsa-portal/ui-core';
+import type { StateStorage } from 'zustand/middleware';
 
 /** The part of expo-sqlite's async API we use (lets tests pass another SQLite driver). */
 export interface SqlDb {
@@ -43,5 +44,20 @@ export async function sqliteLocalStore(db: SqlDb): Promise<LocalStore> {
         ...params
       );
     },
+  };
+}
+
+/** Key-value StateStorage over SQLite for persisted settings and the sync outbox (no AsyncStorage dependency). */
+export function sqliteKv(open: () => Promise<SqlDb>): StateStorage {
+  let ready: Promise<SqlDb> | null = null;
+  const kv = () =>
+    (ready ??= open().then(async (db) => {
+      await db.execAsync('CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);');
+      return db;
+    }));
+  return {
+    getItem: async (k) => (await (await kv()).getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE key = ?', k))?.value ?? null,
+    setItem: async (k, v) => void (await (await kv()).runAsync('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', k, v)),
+    removeItem: async (k) => void (await (await kv()).runAsync('DELETE FROM kv WHERE key = ?', k)),
   };
 }

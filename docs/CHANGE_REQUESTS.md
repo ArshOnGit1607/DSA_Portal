@@ -89,7 +89,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
   - In `index.ts`: `auth: new PostgresAuthStore()`, `stats: new PostgresStatsStore()`, `deleteProblem: unpublishProblem`.
   - `server/__tests__/helpers/person3-app.ts` (`buildPerson3App`) shows the exact wiring and can be deleted afterwards. Then add the auth/admin/stats routes to `openapi-contract.test.ts`.
   - `statsServiceStub` in `/workers` can stay a no-op: counters are written in the submission transaction (see CR-017).
-- **Status:** pending
+- **Status:** done by Person 1 (Day 6): routes wired in app.ts / index.ts
 - **Approved by:** —
 
 ## CR-011
@@ -106,7 +106,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `server/src/db/seed.ts` dev password hash
 - **Proposed change:** replace `$2b$10$wO3P6P6E0.0eK3.yF8iUSeVqjYh4c9qK2M5A1hU6d2Y/F4kH6v6y.` with `$2a$10$iBVruH6tb4eMv2wF.RPFT.XkkhjjPIQ/wpSU2mR.2VuHIDY8E1T2y`.
 - **Reason:** the current value is not a valid bcrypt hash of `password123` (`bcrypt.compare` returns false), so `admin@dsa.portal` / `student@dsa.portal` cannot log in.
-- **Status:** pending
+- **Status:** done by Person 3 (Day 7) with the user's approval: valid hash, and the seed now resets the two dev accounts' passwords (save() never overwrites a password). Needs Person 2's review
 - **Approved by:** —
 
 ## CR-013
@@ -123,7 +123,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `sessions` table
 - **Proposed change:** add `revoked_at TIMESTAMPTZ NULL` and `family_id UUID NOT NULL` (one family per login).
 - **Reason:** refresh rotation with reuse detection is implemented today without a schema change: a rotated session keeps its row with `expires_at = 'epoch'`, and presenting it again revokes all of the user's sessions. That works, but (1) a cleanup job deleting expired rows also forgets rotated ones, and (2) reuse revokes *every* device instead of only the stolen family. With the two columns, `PostgresAuthStore.consumeSession` changes in one place.
-- **Status:** pending
+- **Status:** done by Person 3 (Day 7) with the user's approval: migration `004_session_families`, renumbered `006_session_families` in the merge with `main` (CR-022) (family_id + revoked_at, old epoch rows backfilled), `PostgresAuthStore`/`InMemoryAuthStore` use them; reuse now revokes only the stolen family. Needs Person 2's review
 - **Approved by:** —
 
 ## CR-015
@@ -131,7 +131,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `ProblemRepository` interface
 - **Proposed change:** add `delete(id): Promise<boolean>` (soft delete: `is_published = false`), and make `findById` skip unpublished problems for non-admin reads.
 - **Reason:** `DELETE /admin/problems` needs it. Until then the admin module takes a `deleteProblem` function and the server passes `unpublishProblem` (an `UPDATE problems SET is_published = false` in `modules/admin/routes.ts`). Known gap: `GET /problems/{id}` still returns an unpublished problem because `findById` doesn't filter.
-- **Status:** pending
+- **Status:** done by Person 3 (Day 7) with the user's approval: `ProblemRepository.delete()` in core + PostgreSQL (unpublish) + SQLite + in-memory; admin route uses it and the `deleteProblem` option is gone from app.ts/index.ts. **Not done on purpose:** making `findById` skip unpublished problems — the worker must still judge queued submissions for a problem deleted after they were sent; filter in the problems routes instead if wanted. Needs Person 1's and Person 2's review
 - **Approved by:** —
 
 ## CR-016
@@ -142,7 +142,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
   2. `GET /api/v1/stats/me` additionally returns `difficulties: [{ difficulty, attempted, solved }]` (difficulty chart) and now always includes `streak`.
   3. Document `429 TOO_MANY_REQUESTS` (+ `Retry-After` header) on `POST /auth/login` (login throttling), `409` already exists on register, `403 FORBIDDEN` on admin routes already exists.
 - **Reason:** Day 4 stats dashboard (streak calendar, difficulty breakdown) and the Day 3 login throttling.
-- **Status:** pending
+- **Status:** done by Person 1 (Day 6): documented in openapi.yaml
 - **Approved by:** —
 
 ## CR-017
@@ -150,7 +150,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `PostgresSubmissionRepository.save()`
 - **Proposed change:** replace the inline `user_problem_stats` upsert with `await updateStatsOnSubmission(client, submission)` from `server/src/modules/stats/stats.service.ts` (same SQL, same transaction).
 - **Reason:** one owner for the stats model (Person 3), no duplicate SQL. Behaviour is identical; `person3-postgres.test.ts` checks it under 10 concurrent transactions.
-- **Status:** pending
+- **Status:** done by Person 3 (Day 7) with the user's approval: `save()` calls `updateStatsOnSubmission(client, submission)` in its transaction. Needs Person 2's review
 - **Approved by:** —
 
 ## CR-018
@@ -158,7 +158,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Field:** `SandboxOptions` in `core/src/sandbox.ts`
 - **Proposed change:** optional `nodePath?: string` and `extraEnv?: Record<string, string>` used by `childCommand` instead of the hard-coded `'node'` from `PATH`.
 - **Reason:** the desktop app judges offline with core's sandbox. Today that needs a Node.js install on the user's machine; with the option the app can run its own Electron binary as Node (`process.execPath` + `ELECTRON_RUN_AS_NODE=1`), so installers work on machines without Node.
-- **Status:** pending
+- **Status:** done: `nodePath`/`extraEnv` in core (Person 1); the desktop app passes its Electron binary with ELECTRON_RUN_AS_NODE (Person 3, Day 7)
 - **Approved by:** —
 
 ## CR-019
@@ -197,7 +197,7 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
   3. `ui-core/src/realtime.ts`: connect with `io(url, { auth: { token } })` instead of emitting `auth:join`; listen for `submission:queued|running|finished` (payload `{ submissionId, problemId, status, passed, total }`; fetch per-test results over REST) and `leaderboard:updated` / `daily:new`. See `/docs/websocket-events.md`.
   4. Rename `004_session_families` to `006_session_families` (`004` and `005` are taken on `main`).
   5. `/metrics`: the worker already serves Prometheus on `WORKER_METRICS_PORT`. Put the API's cache counters there or at `GET /metrics` on the API, but agree the name with Person 2 so one scrape config covers both.
-- **Status:** pending
+- **Status:** done by Person 3 in the merge with `main`: 1 (fork routes and wiring dropped), 2 (wrappers `CachedLeaderboardStore` / `CachedDailyChallengeStore`; wiring sent as CR-032), 3 (`realtime.ts` on the new events), 4 (`006_session_families`, made idempotent so a database that ran the fork's 004 applies it safely). 5 proposed in CR-032. Needs Person 1's review
 - **Approved by:** —
 
 ## CR-023
@@ -277,5 +277,95 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **Proposed by:** Person 1 (Day 9), **for Person 2** (owner of `server/src/db/seed.ts`)
 - **Problem:** the seeded `admin@dsa.portal` and `student@dsa.portal` can't log in. The hash in `seed.ts` (comment: "bcrypt hash for password123") doesn't match `password123`. `bcrypt.compare('password123', <hash>)` returns `false`.
 - **Proposed change:** replace it with a real hash, e.g. the output of `node -e "require('bcryptjs').hash('password123', 10).then(console.log)"`, and add a seed test that `compare`s it.
+- **Status:** pending
+- **Approved by:** —
+
+> CR-028 to CR-031 were Person 3's CR-021 to CR-024 on the fork; renumbered in the merge with `main` because Person 1 used those numbers (same convention as CR-019/CR-020).
+
+## CR-028
+- **Proposed by:** Person 3 (Day 7), **for Person 1** (owner of `/server/src/modules/{leaderboard,daily}`, `app.ts`, `index.ts`, `/workers`)
+- **Field:** `GET /api/v1/leaderboard`, `GET /api/v1/daily-challenge` (already in openapi.yaml), `GET /metrics`
+- **Change already made (user's approval; Day 7 caching and clients needed them):**
+  1. `modules/leaderboard/routes.ts`: ranked by solved, then score (Easy 1 / Medium 2 / Hard 3, Person 2's formula), ties share a rank, opaque offset cursor, cached 30 s. `PostgresLeaderboard` + an empty in-memory board.
+  2. `modules/daily/routes.ts`: the admin-pinned problem for today's UTC date (`daily_challenges`), else a stable rotation through published problems by day number (no cron needed), cached 300 s. 404 only when there are no problems.
+  3. `app.ts`: `AppOptions.cache/leaderboard/daily`; problems are wrapped in `CachedProblemRepository`; `GET /metrics` (cache counters, Prometheus text). `index.ts`: `cacheFromEnv()`, Postgres stores. Contract cases added for both routes.
+  4. `workers/src/main.ts`: the stats hook bumps the leaderboard cache generation after each judged submission.
+- **Status:** superseded by CR-021/CR-022 (Person 1): in the merge with `main` the fork's leaderboard/daily routes and their `app.ts`/`index.ts`/`workers` wiring were dropped for Person 1's; the Redis cache now wraps Person 1's stores (CR-032)
+- **Approved by:** the user (Person 3's session, Day 7)
+
+## CR-029
+- **Proposed by:** Person 3 (Day 7), **for Person 1** (`/docs/websocket-events.md`, realtime module)
+- **Field:** WebSocket event `submission:result`
+- **Proposed change:** add `submissionId` and `status` (`judged`/`failed`) to the payload, and emit it to the submitting user's room after `auth:join`.
+- **Reason:** without `submissionId` a client with two submissions on the same problem can't tell which one finished. The ui-core client already prefers `submissionId` and falls back to `problemId`, then re-reads the submission over REST, so it is safe either way.
+- **Also:** there is no Socket.IO server yet. The clients (`createRealtime` in ui-core, used by web, desktop and mobile) connect to the API origin and fall back to polling while it is missing, so nothing breaks until Person 1 adds it.
+- **Status:** withdrawn: Person 1's events (`submission:queued|running|finished`) already carry `submissionId`; the client was switched to them in the merge (CR-022 item 3)
+- **Approved by:** —
+
+## CR-030
+- **Proposed by:** Person 3 (Day 8), **for Person 2** (`/core/src/sync`, `/server/src/sync`, `/core/src/storage`)
+- **Field:** client `SyncEngine` and `POST /api/v1/sync/push` / `GET /api/v1/sync/pull` (in openapi.yaml, not implemented)
+- **Situation:** Day 8 asks the clients to "use Person 2's SyncEngine", but only the sync types and the HLC helpers exist in `core/src/sync`; there is no engine and no server sync routes.
+- **What the clients do meanwhile (no contract change, Person 3's folders only):** `ui-core/src/sync.ts` is a submission outbox. Offline submissions are stored on the device (localStorage on web/desktop, SQLite `kv` table on mobile) and replayed through the existing `POST /api/v1/submissions` with the original `Idempotency-Key`, so a replay can never create a duplicate. The server judges again and its verdict counts; a desktop offline verdict that differs is shown as a conflict.
+- **Proposed change:** when the SyncEngine exists, expose `{ status, pendingCount, queue, syncNow(), subscribe() }` (the shape of `SyncState` in `ui-core/src/sync.ts`) so the client UI can switch to it with no screen changes; push submissions as `SyncOperation { entity: 'submission', opId: <Idempotency-Key> }`. The desktop's local `solved` list (`offline-progress.json`) can then move into the SQLite storage.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-031
+- **Proposed by:** Person 3 (Day 9), **for Person 2** (`/.github`)
+- **Field:** CI: client test jobs (there is no `.github/workflows` yet)
+- **Proposed change:** add `.github/workflows/clients.yml`; everything it runs lives in Person 3's folders and passes locally:
+  ```yaml
+  name: clients
+  on: [push, pull_request]
+  jobs:
+    unit:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: npm test -w ui-core && npm test -w web && npm test -w mobile
+    web-e2e:
+      runs-on: ubuntu-latest        # Google Chrome is preinstalled (web/playwright.config.ts uses channel 'chrome')
+      env: { CI: '1' }
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: npm run test:e2e -w web
+        - uses: actions/upload-artifact@v4
+          if: failure()
+          with: { name: web-e2e-traces, path: web/test-results }
+    desktop-e2e:
+      runs-on: ubuntu-latest
+      env: { CI: '1' }
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: 20, cache: npm }
+        - run: npm ci
+        - run: xvfb-run -a npm run test:e2e:ci -w desktop   # Electron needs a display
+        - uses: actions/upload-artifact@v4
+          if: failure()
+          with: { name: desktop-e2e-traces, path: desktop/test-results }
+  ```
+- **Relation to CR-026:** CR-026 (Person 1) already runs the unit suites; this adds the two browser/Electron e2e jobs.
+- **Reason:** Day 9 asks for the Electron smoke test "in CI-friendly form"; the tests are ready (CI mode: one retry, GitHub annotations, `--no-sandbox` for the runner), the workflow file is Person 2's.
+- **Status:** pending
+- **Approved by:** —
+
+## CR-032
+- **Proposed by:** Person 3 (merge with `main`), **for Person 1** (`server/src/app.ts`, `server/src/index.ts`, `workers/src/main.ts`), as asked in CR-022 item 2 ("send the wiring as a CR, not an edit")
+- **Field:** wiring of Person 3's Redis cache (`/server/src/cache`); no endpoint, column or event changes
+- **Proposed change:**
+  1. `index.ts`: `const cache = cacheFromEnv();` (REDIS_URL unset = pass-through) and
+     `buildApp({ …, problems: new CachedProblemRepository(new PostgresProblemRepository(), cache), leaderboard: new CachedLeaderboardStore(new PostgresLeaderboardStore(), cache), daily: new CachedDailyChallengeStore(new PostgresDailyChallengeStore(), cache) })`, plus `app.addHook('onClose', () => cache.close())`.
+     The wrappers live in `server/src/cache/{cached-problem.repository,cached-stores}.ts` and implement your interfaces unchanged (leaderboard keyed by period, 30 s; daily keyed by UTC date, 300 s; problems 300/600 s with admin invalidation).
+  2. Invalidation: on `leaderboard:updated` call `cache.bumpGeneration('leaderboard')` (in the API's event listener, or in `workers/src/main.ts` after a judged submission, as the fork did). Without it the board is at most 30 s stale.
+  3. `/metrics` (CR-022 item 5): `cache.renderMetrics()` returns Prometheus text (`dsa_cache_requests_total{result="hit|miss"}`, `dsa_cache_errors_total`). Proposal: serve it at `GET /metrics` on the API (outside `/api/v1`), next to the worker's `WORKER_METRICS_PORT` endpoint; Person 2 adds both targets to one scrape config.
+- **Tested:** `server/__tests__/cache.test.ts` runs your leaderboard and daily routes over the wrappers (cache hits, `period=week` keyed separately, Dates survive the JSON round trip, generation bump).
 - **Status:** pending
 - **Approved by:** —

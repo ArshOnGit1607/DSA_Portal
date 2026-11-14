@@ -2,8 +2,12 @@ import { createStore } from 'zustand/vanilla';
 import {
   ApiError,
   createDsa,
+  storageLocalStore,
+  webNetworkStatus,
+  withProblemCache,
   type DesktopBridge,
   type DsaApi,
+  type NetworkStatus,
   type Submission,
 } from '@dsa-portal/ui-core';
 
@@ -15,7 +19,7 @@ declare global {
 
 export const desktop = window.dsaDesktop;
 
-/** Connectivity as the UI sees it. In the browser this stays online (Day 8 adds offline UX for web). */
+/** Desktop connectivity (from the main process); routes calls to the offline engine. The browser uses navigator.onLine. */
 export const connectivity = createStore<{ online: boolean; offlineGuest: boolean }>(() => ({ online: true, offlineGuest: false }));
 
 const offlineOnly = (what: string) => {
@@ -52,6 +56,8 @@ function withOfflineEngine(http: DsaApi, bridge: DesktopBridge): DsaApi {
       if (online()) return http.submit(body, key);
       const s = await bridge.offline.submit(body.problemId, body.code);
       local.set(s.id, s);
+      // Judged here for instant feedback; the outbox replays it to the server, whose verdict counts.
+      dsa.stores.sync.getState().enqueue({ ...body, key, local: { passed: s.passed, total: s.total } });
       return { submissionId: s.id, status: s.status };
     },
     submission: (id) => {
@@ -67,9 +73,19 @@ function withOfflineEngine(http: DsaApi, bridge: DesktopBridge): DsaApi {
 
 const apiBase = desktop?.apiBaseUrl ?? import.meta.env.VITE_API_URL ?? '';
 
+const desktopNetwork: NetworkStatus = {
+  isOnline: () => connectivity.getState().online,
+  subscribe: (l) => connectivity.subscribe((s, prev) => s.online !== prev.online && l(s.online)),
+};
+
 export const dsa = createDsa({
   baseUrl: apiBase,
   settingsStorage: window.localStorage,
+  // Socket.IO on the API origin for live results; VITE_REALTIME=0 turns it off (polling only).
+  realtimeUrl: import.meta.env.VITE_REALTIME === '0' ? undefined : apiBase,
+  network: desktop ? desktopNetwork : webNetworkStatus(),
+  // Browser: problems opened before stay readable offline (desktop bundles all problems instead).
+  wrapApi: (http) => withProblemCache(http, async () => storageLocalStore(window.localStorage)),
   ...(desktop && {
     refresh: () => desktop.auth.refresh(),
     onTokens: (t) => desktop.auth.saveRefreshToken(t.refreshToken),

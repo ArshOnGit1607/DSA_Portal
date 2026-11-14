@@ -8,3 +8,6 @@ export * from './stores';
 export * from './hooks';
 export * from './theme';
 export * from './create-dsa';
+export * from './realtime';
+export * from './sync';
+export * from './offline-cache';

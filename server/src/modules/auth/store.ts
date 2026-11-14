@@ -6,6 +6,8 @@ export type ApiUser = User & { createdAt: Date };
 
 export interface NewSession {
   userId: string;
+  /** Login family the token belongs to; omitted on login (a new family starts). */
+  familyId?: string;
   tokenHash: string;
   expiresAt: Date;
   ip?: string;
@@ -14,11 +16,14 @@ export interface NewSession {
 
 /**
  * Result of presenting a refresh token:
- * - ok: it was live and is now used up (the caller issues a new one),
- * - reused: it was already rotated, so it was probably stolen; every session of the user is revoked,
+ * - ok: it was live and is now used up (the caller issues the next token in the same family),
+ * - reused: it was already used, so two parties hold it (theft); its whole family is revoked,
  * - invalid: unknown or expired.
  */
-export type ConsumeResult = { status: 'ok' | 'reused'; userId: string } | { status: 'invalid' };
+export type ConsumeResult =
+  | { status: 'ok'; userId: string; familyId: string }
+  | { status: 'reused'; userId: string }
+  | { status: 'invalid' };
 
 /**
  * What the auth routes need from storage. Core's UserRepository has no email lookup,
@@ -38,14 +43,10 @@ export interface AuthStore {
 
 export class DuplicateUserError extends Error {}
 
-// A rotated session keeps its row with this expiry, so presenting it again is recognised as reuse.
-// shortcut: sentinel value in expires_at instead of a revoked_at column (CR-014); cleanup jobs that delete expired rows also forget rotated ones.
-export const ROTATED = new Date(0);
-
 /** For tests and running the API without a database. */
 export class InMemoryAuthStore implements AuthStore {
   private users = new Map<string, ApiUser & { passwordHash: string }>();
-  private sessions = new Map<string, { userId: string; expiresAt: Date }>();
+  private sessions = new Map<string, { userId: string; familyId: string; expiresAt: Date; revoked: boolean }>();
 
   async createUser(u: { username: string; email: string; passwordHash: string }) {
     for (const x of this.users.values()) {
@@ -68,18 +69,17 @@ export class InMemoryAuthStore implements AuthStore {
     if (u) u.role = role;
   }
   async createSession(s: NewSession) {
-    this.sessions.set(s.tokenHash, { userId: s.userId, expiresAt: s.expiresAt });
+    this.sessions.set(s.tokenHash, { userId: s.userId, familyId: s.familyId ?? randomUUID(), expiresAt: s.expiresAt, revoked: false });
   }
   async consumeSession(tokenHash: string): Promise<ConsumeResult> {
     const s = this.sessions.get(tokenHash);
-    if (!s) return { status: 'invalid' };
-    if (s.expiresAt.getTime() === ROTATED.getTime()) {
-      for (const [k, v] of this.sessions) if (v.userId === s.userId) this.sessions.delete(k);
+    if (!s || s.expiresAt.getTime() <= Date.now()) return { status: 'invalid' };
+    if (s.revoked) {
+      for (const v of this.sessions.values()) if (v.familyId === s.familyId) v.revoked = true;
       return { status: 'reused', userId: s.userId };
     }
-    if (s.expiresAt.getTime() <= Date.now()) return { status: 'invalid' };
-    s.expiresAt = ROTATED;
-    return { status: 'ok', userId: s.userId };
+    s.revoked = true;
+    return { status: 'ok', userId: s.userId, familyId: s.familyId };
   }
   async deleteSession(tokenHash: string) {
     this.sessions.delete(tokenHash);
@@ -90,7 +90,7 @@ const strip = ({ passwordHash: _, ...u }: ApiUser & { passwordHash: string }): A
 
 const USER_COLS = 'id, username, email, role, created_at AS "createdAt"';
 
-/** Uses Person 2's `users` and `sessions` tables (001_initial_schema); no schema change. */
+/** Uses the `users` and `sessions` tables (001_initial_schema + 006_session_families). */
 export class PostgresAuthStore implements AuthStore {
   async createUser(u: { username: string; email: string; passwordHash: string }) {
     try {
@@ -117,23 +117,27 @@ export class PostgresAuthStore implements AuthStore {
   }
   async createSession(s: NewSession) {
     await pool.query(
-      'INSERT INTO sessions (user_id, token_hash, expires_at, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5)',
-      [s.userId, s.tokenHash, s.expiresAt, s.ip ?? null, s.userAgent ?? null]
+      `INSERT INTO sessions (user_id, token_hash, expires_at, ip_address, user_agent, family_id)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::uuid, gen_random_uuid()))`,
+      [s.userId, s.tokenHash, s.expiresAt, s.ip ?? null, s.userAgent ?? null, s.familyId ?? null]
     );
   }
   async consumeSession(tokenHash: string): Promise<ConsumeResult> {
     // The row lock of this UPDATE makes concurrent refreshes with one token succeed at most once.
-    const used = await pool.query<{ userId: string }>(
-      `UPDATE sessions SET expires_at = $2 WHERE token_hash = $1 AND expires_at > now() RETURNING user_id AS "userId"`,
-      [tokenHash, ROTATED]
+    const used = await pool.query<{ userId: string; familyId: string }>(
+      `UPDATE sessions SET revoked_at = now()
+       WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
+       RETURNING user_id AS "userId", family_id AS "familyId"`,
+      [tokenHash]
     );
-    if (used.rows[0]) return { status: 'ok', userId: used.rows[0].userId };
-    const reused = await pool.query<{ userId: string }>(
-      `SELECT user_id AS "userId" FROM sessions WHERE token_hash = $1 AND expires_at = $2`,
-      [tokenHash, ROTATED]
+    if (used.rows[0]) return { status: 'ok', ...used.rows[0] };
+    const reused = await pool.query<{ userId: string; familyId: string }>(
+      `SELECT user_id AS "userId", family_id AS "familyId" FROM sessions
+       WHERE token_hash = $1 AND revoked_at IS NOT NULL AND expires_at > now()`,
+      [tokenHash]
     );
     if (!reused.rows[0]) return { status: 'invalid' };
-    await pool.query('DELETE FROM sessions WHERE user_id = $1', [reused.rows[0].userId]);
+    await pool.query('UPDATE sessions SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL', [reused.rows[0].familyId]);
     return { status: 'reused', userId: reused.rows[0].userId };
   }
   async deleteSession(tokenHash: string) {

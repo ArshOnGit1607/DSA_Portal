@@ -9,7 +9,8 @@ export default defineConfig({
   server: {
     port: 5173,
     // Same origin in dev: the HttpOnly refresh cookie (SameSite=Strict, Path=/api/v1/auth) just works.
-    proxy: { '/api': 'http://localhost:3000' },
+    // API_PROXY lets the e2e tests point the dev server at their own throwaway API.
+    proxy: { '/api': process.env.API_PROXY ?? 'http://localhost:3000', '/socket.io': { target: (process.env.API_PROXY ?? 'http://localhost:3000').replace(/^http/, 'ws'), ws: true } },
   },
-  test: { environment: 'jsdom', include: ['src/**/*.test.{ts,tsx}'], env: { VITE_API_URL: 'http://api.test' }, setupFiles: ['src/test-setup.ts'] },
+  test: { environment: 'jsdom', include: ['src/**/*.test.{ts,tsx}'], env: { VITE_API_URL: 'http://api.test', VITE_REALTIME: '0' }, setupFiles: ['src/test-setup.ts'] },
 });

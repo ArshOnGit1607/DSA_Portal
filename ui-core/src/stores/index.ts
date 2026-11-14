@@ -3,7 +3,14 @@ import { createJSONStorage, persist, type StateStorage } from 'zustand/middlewar
 import { ApiError, type ApiClient } from '../api/client';
 import type { DsaApi, Difficulty, Problem, StatsMe, StreakDetail, Submission, TokenPair, User } from '../api/dsa-api';
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** User-facing error text; a network failure gets a plain sentence instead of "Failed to fetch". */
+export const errorMessage = (e: unknown) =>
+  e instanceof ApiError && e.status === 0
+    ? 'No connection to the server. Check your network and try again.'
+    : e instanceof ApiError && e.code === 'QUOTA_EXCEEDED' // CR-023: per-user submission quota
+      ? "You've hit the submission limit. Wait a minute and try again."
+      : e instanceof Error ? e.message : String(e);
+const message = errorMessage;
 
 // ---------------------------------------------------------------- auth
 export interface AuthState {
@@ -146,9 +153,12 @@ export function createProblemStore(api: DsaApi): StoreApi<ProblemState> {
 
 // ---------------------------------------------------------------- submission
 export interface SubmissionState {
-  status: 'idle' | 'submitting' | 'judging' | 'done' | 'error';
+  /** 'queued': no connection, the submission waits in the sync outbox. */
+  status: 'idle' | 'submitting' | 'judging' | 'done' | 'error' | 'queued';
   current: Submission | null;
   error: string | null;
+  /** Outbox key of the submission queued offline, so the page can follow it until it syncs. */
+  queuedKey: string | null;
   submit(problemId: string, code: string): Promise<void>;
   reset(): void;
 }
@@ -156,29 +166,43 @@ export interface SubmissionState {
 const uuid = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-/** Polls GET /submissions/:id until judged/failed (Day 7 adds a socket push with polling as fallback). */
+/**
+ * Polls GET /submissions/:id until judged/failed. `waitBetweenPolls` lets a socket push wake the
+ * poll early (createDsa wires Socket.IO); without it, or while the socket is down, it is plain polling.
+ */
 export function createSubmissionStore(
   api: DsaApi,
-  opts: { pollMs?: number; timeoutMs?: number; onJudged?: (s: Submission) => void; sleep?: (ms: number) => Promise<void> } = {}
+  opts: {
+    pollMs?: number;
+    timeoutMs?: number;
+    onJudged?: (s: Submission) => void;
+    sleep?: (ms: number) => Promise<void>;
+    waitBetweenPolls?: (target: { submissionId: string; problemId: string }) => Promise<unknown>;
+    /** Called instead of failing when the network is down (createDsa passes the sync outbox). */
+    onOffline?: (s: { problemId: string; code: string; key: string }) => void;
+  } = {}
 ): StoreApi<SubmissionState> {
   const pollMs = opts.pollMs ?? 750;
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const wait = opts.waitBetweenPolls ?? (() => sleep(pollMs));
   let run = 0; // a newer submit or reset cancels an older poll loop
   return createStore<SubmissionState>((set) => ({
     status: 'idle',
     current: null,
     error: null,
+    queuedKey: null,
     reset() {
       run++;
-      set({ status: 'idle', current: null, error: null });
+      set({ status: 'idle', current: null, error: null, queuedKey: null });
     },
     async submit(problemId, code) {
       const mine = ++run;
-      set({ status: 'submitting', current: null, error: null });
+      set({ status: 'submitting', current: null, error: null, queuedKey: null });
+      // One key per click: a retry after a timeout (or an outbox replay) can't create a second submission.
+      const key = uuid();
       try {
-        // One key per click: a retry after a timeout can't create a second submission.
-        const { submissionId } = await api.submit({ problemId, code }, uuid());
+        const { submissionId } = await api.submit({ problemId, code }, key);
         set({ status: 'judging' });
         const deadline = Date.now() + timeoutMs;
         while (mine === run) {
@@ -191,10 +215,15 @@ export function createSubmissionStore(
             return;
           }
           if (Date.now() > deadline) throw new Error('Judging is taking too long; check back in a moment');
-          await sleep(pollMs);
+          await wait({ submissionId, problemId });
         }
       } catch (e) {
-        if (mine === run) set({ status: 'error', error: message(e) });
+        if (mine !== run) return;
+        if (e instanceof ApiError && e.status === 0 && opts.onOffline) {
+          opts.onOffline({ problemId, code, key });
+          return set({ status: 'queued', queuedKey: key });
+        }
+        set({ status: 'error', error: message(e) });
       }
     },
   }));

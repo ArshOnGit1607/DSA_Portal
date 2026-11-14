@@ -6,6 +6,7 @@ import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { HomePage } from './pages/HomePage';
 import { ProblemPage } from './pages/ProblemPage';
 import { StatsPage } from './pages/StatsPage';
+import { LeaderboardPage } from './pages/LeaderboardPage';
 import { connectivity } from './platform';
 
 /** Signed-in users, or desktop users who chose to practise offline. */
@@ -29,6 +30,7 @@ export function App() {
           <Route path="/" element={<RequireAuth><HomePage /></RequireAuth>} />
           <Route path="/problem/:id" element={<RequireAuth><ProblemPage /></RequireAuth>} />
           <Route path="/stats" element={<RequireAuth><StatsPage /></RequireAuth>} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

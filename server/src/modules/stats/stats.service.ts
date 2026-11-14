@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import type { Difficulty, StatsRepository, Submission } from '@dsa-portal/core';
-import { PostgresStatsRepository } from '../../db/repositories';
+// The file, not the repositories index: submission.repository imports this module (no import cycle).
+import { PostgresStatsRepository } from '../../db/repositories/stats.repository';
 import { pool } from '../../db/pool';
 
 export interface StreakStat {
@@ -49,7 +50,7 @@ export function computeStreak(firstSolves: Date[], now = new Date()): StreakStat
  * Maintained counters: call inside the transaction that stores the judged result, so stats can
  * never disagree with submissions. The single upsert is safe under concurrent submissions
  * (the unique (user_id, problem_id) row is locked by ON CONFLICT DO UPDATE).
- * PostgresSubmissionRepository.save() runs the same statement today (CR-017 asks it to call this).
+ * PostgresSubmissionRepository.save() calls it (CR-017).
  */
 export async function updateStatsOnSubmission(tx: PoolClient, submission: Submission): Promise<void> {
   if (submission.status !== 'judged') return;
