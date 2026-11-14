@@ -1,6 +1,7 @@
 import { buildApp } from './app';
 import { closePool } from './db/pool';
 import { PostgresProblemRepository, PostgresSubmissionRepository } from './db/repositories';
+import { PostgresAuditRepository } from './db/repositories/audit.repository';
 import { PostgresAuthStore } from './modules/auth/store';
 import { PostgresSubmissionQueue } from './modules/submissions/queue';
 import { PostgresStatsStore } from './modules/stats/stats.service';
@@ -19,6 +20,7 @@ const app = buildApp({
   leaderboard: new PostgresLeaderboardStore(),
   daily: new PostgresDailyChallengeStore(),
   events: new PostgresEventSource(),
+  audit: new PostgresAuditRepository(),
 });
 app.addHook('onClose', closePool);
 

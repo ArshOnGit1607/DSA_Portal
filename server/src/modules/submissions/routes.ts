@@ -1,14 +1,15 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { ProblemRepository, Submission, SubmissionRepository } from '@dsa-portal/core';
+import type { AuditRepository, ProblemRepository, Submission, SubmissionRepository } from '@dsa-portal/core';
 import { decodeCursor, HttpError, keysetPage, notFound } from '../../lib/http';
 import { findProblemOr404, IdParams, PageQuery } from '../problems/routes';
 import type { SubmissionQueue } from './queue';
 
 const SubmissionCreate = z.object({
   problemId: z.string().min(1),
-  code: z.string().min(1).max(100_000),
+  // PostgreSQL text cannot hold NUL; rejecting it here turns a 500 into a clear 400.
+  code: z.string().min(1).max(100_000).refine((c) => !c.includes('\0'), 'must not contain NUL characters'),
 });
 const IdempotencyKey = z.string().min(1).max(128).optional();
 
@@ -42,12 +43,20 @@ export interface Backpressure {
   retryAfterS: number;
 }
 
+/** Per-user execution quotas, counted in PostgreSQL so they hold across API instances. */
+export interface Quota {
+  perMinute: number;
+  perDay: number;
+}
+
 export const submissionRoutes: FastifyPluginAsync<{
   problems: ProblemRepository;
   submissions: SubmissionRepository;
   queue: SubmissionQueue;
   backpressure: Backpressure;
-}> = async (app, { problems, submissions, queue, backpressure }) => {
+  quota: Quota;
+  audit?: AuditRepository;
+}> = async (app, { problems, submissions, queue, backpressure, quota, audit }) => {
   app.post('/submissions', { onRequest: app.authenticate }, async (req, reply) => {
     const body = SubmissionCreate.parse(req.body);
     const key = IdempotencyKey.parse(req.headers['idempotency-key']);
@@ -66,6 +75,19 @@ export const submissionRoutes: FastifyPluginAsync<{
 
     const replay = await findReplay();
     if (replay) return accepted(replay);
+
+    // Quotas (a replay above uses none): the user's n-th newest submission inside the window says when a slot frees up.
+    for (const [limit, windowMs, label] of [
+      [quota.perMinute, 60_000, 'minute'],
+      [quota.perDay, 86_400_000, 'day'],
+    ] as const) {
+      const nth = await queue.nthNewestSince(userId, limit, new Date(Date.now() - windowMs));
+      if (nth) {
+        const retryAfterS = Math.max(1, Math.ceil((nth.getTime() + windowMs - Date.now()) / 1000));
+        reply.header('retry-after', String(retryAfterS));
+        throw new HttpError(429, 'QUOTA_EXCEEDED', `Submission quota of ${limit} per ${label} reached; retry in ${retryAfterS}s`);
+      }
+    }
 
     // Backpressure: refuse new work while the workers are far behind (a replay above adds none).
     if ((await queue.waitingCount()) >= backpressure.maxWaiting) {
@@ -95,6 +117,17 @@ export const submissionRoutes: FastifyPluginAsync<{
       throw err;
     }
     req.log.info({ submissionId: submission.id, problemId: problem.id }, 'submission queued');
+    // Who submitted what, when, from where. The code itself is in the submission row; the hash proves it is unchanged.
+    const entry = {
+      actorId: userId,
+      action: 'submission.create',
+      entityType: 'submission',
+      entityId: submission.id,
+      newValue: { problemId: problem.id, codeSha256: createHash('sha256').update(body.code).digest('hex'), codeLength: body.code.length },
+      ipAddress: req.ip,
+    };
+    // The submission is already queued, so a failed audit insert must not turn into an error for the user; the log line keeps the record.
+    await audit?.log(entry).catch((err) => req.log.error({ err, audit: entry }, 'audit log write failed'));
     return accepted(submission);
   });
 

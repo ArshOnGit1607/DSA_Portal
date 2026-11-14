@@ -20,6 +20,8 @@ export interface SubmissionQueue {
   listFailed(limit: number, after?: { failedAt: string; id: string }): Promise<FailedJob[]>;
   /** failed → queued with a fresh attempt budget. False if the id is not in the dead-letter list. */
   requeue(id: string): Promise<boolean>;
+  /** created_at of the user's n-th newest submission after `since`, or null if they made fewer than n (quotas). */
+  nthNewestSince(userId: string, n: number, since: Date): Promise<Date | null>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -55,6 +57,17 @@ export class PostgresSubmissionQueue implements SubmissionQueue {
       [id]
     );
     return rowCount === 1;
+  }
+
+  async nthNewestSince(userId: string, n: number, since: Date) {
+    // Walks idx_submissions_user_cursor (user_id, created_at DESC) and stops at row n.
+    const { rows } = await pool.query<{ createdAt: Date }>(
+      `SELECT created_at AS "createdAt" FROM submissions
+       WHERE user_id = $1 AND created_at > $2
+       ORDER BY created_at DESC OFFSET $3 LIMIT 1`,
+      [userId, since, n - 1]
+    );
+    return rows[0]?.createdAt ?? null;
   }
 }
 
@@ -92,5 +105,13 @@ export class InMemorySubmissionQueue implements SubmissionQueue {
     s.status = 'queued';
     s.judgedAt = undefined;
     return true;
+  }
+
+  async nthNewestSince(userId: string, n: number, since: Date) {
+    const times = (await this.submissions.findByUser(userId))
+      .map((s) => s.createdAt)
+      .filter((t) => t > since)
+      .sort((a, b) => b.getTime() - a.getTime());
+    return times[n - 1] ?? null;
   }
 }

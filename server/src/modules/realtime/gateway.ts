@@ -51,9 +51,9 @@ export class PostgresEventSource implements EventSource {
  * Socket.IO on the API's HTTP server. Clients connect with `io(url, { auth: { token: accessToken } })`;
  * each socket joins room `user:<id>`.
  */
-export function attachRealtime(app: FastifyInstance, source: EventSource) {
-  // shortcut: any origin, like the REST CORS today; Day 8 adds the allow-list to both.
-  const io = new Server(app.server, { cors: { origin: true } });
+export function attachRealtime(app: FastifyInstance, source: EventSource, origin: string[] | boolean = true) {
+  // Same allow-list as REST CORS (app.ts). The JWT in the handshake, not a cookie, is what authenticates.
+  const io = new Server(app.server, { cors: { origin } });
 
   io.use((socket, next) => {
     try {

@@ -13,6 +13,8 @@ const TWO_SUM_OK =
   'function solve({ nums, target }) { const m = new Map(); for (let i = 0; i < nums.length; i++) { if (m.has(target - nums[i])) return [m.get(target - nums[i]), i]; m.set(nums[i], i); } }';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// These tests poll fast and submit a lot as one user: they test the queue, not the Day 8 limits (security.test.ts does).
+const NO_LIMITS = { quota: { perMinute: 1e6, perDay: 1e6 }, rateLimit: { perIp: 1e6, perUser: 1e6 } };
 
 (DB_URL ? describe : describe.skip)('submission queue end-to-end (PostgreSQL + separate worker process)', () => {
   let worker: ChildProcess;
@@ -45,7 +47,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const problems = new repos.PostgresProblemRepository();
     if (!(await problems.findById('two-sum'))) await problems.save(PROBLEMS.find((p) => p.id === 'two-sum')!);
 
-    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue(), leaderboard: new (await import('../../server/src/modules/leaderboard/store')).PostgresLeaderboardStore() });
+    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue(), leaderboard: new (await import('../../server/src/modules/leaderboard/store')).PostgresLeaderboardStore(), ...NO_LIMITS });
     await app.ready();
     auth = { authorization: `Bearer ${app.jwt.sign({ sub: USER_ID })}` };
 
@@ -69,7 +71,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const buildRealtimeApp = ({ repos, ...rest }: { repos: typeof import('../../server/src/db/repositories') } & Record<string, any>) =>
-    buildAppFn({ logger: false, problems: new repos.PostgresProblemRepository(), submissions: new repos.PostgresSubmissionRepository(), ...rest });
+    buildAppFn({ logger: false, problems: new repos.PostgresProblemRepository(), submissions: new repos.PostgresSubmissionRepository(), ...NO_LIMITS, ...rest });
 
   const submit = (code: string, headers: Record<string, string> = {}) =>
     app.inject({ method: 'POST', url: '/api/v1/submissions', headers: { ...auth, ...headers }, payload: { problemId: 'two-sum', code } });

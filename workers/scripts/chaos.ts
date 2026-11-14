@@ -69,7 +69,8 @@ async function main() {
     const problems = new repos.PostgresProblemRepository();
     if (!(await problems.findById('two-sum'))) await problems.save(PROBLEMS.find((p) => p.id === 'two-sum')!);
 
-    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue(), leaderboard: new (await import('../../server/src/modules/leaderboard/store')).PostgresLeaderboardStore() });
+    app = buildApp({ logger: false, problems, submissions: new repos.PostgresSubmissionRepository(), queue: new PostgresSubmissionQueue(), leaderboard: new (await import('../../server/src/modules/leaderboard/store')).PostgresLeaderboardStore(),
+      quota: { perMinute: 1e6, perDay: 1e6 }, rateLimit: { perIp: 1e6, perUser: 1e6 } }); // tests the queue, not the Day 8 limits
     await app.ready();
     const auth = { authorization: `Bearer ${app.jwt.sign({ sub: USER_ID })}` };
 

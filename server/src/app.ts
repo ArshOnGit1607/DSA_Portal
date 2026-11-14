@@ -1,17 +1,18 @@
 import { randomUUID } from 'crypto';
 import Fastify from 'fastify';
-import type { FastifyRequest, FastifyServerOptions } from 'fastify';
+import type { FastifyError, FastifyRequest, FastifyServerOptions } from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
 import { ZodError } from 'zod';
-import type { ProblemRepository, SubmissionRepository } from '@dsa-portal/core';
+import type { AuditRepository, ProblemRepository, SubmissionRepository } from '@dsa-portal/core';
 import { HttpError } from './lib/http';
+import { RateLimiter } from './lib/rate-limit';
 import { InMemoryProblemRepository } from './modules/problems/in-memory-problem.repository';
 import { InMemorySubmissionRepository } from './modules/submissions/in-memory-submission.repository';
 import { problemRoutes } from './modules/problems/routes';
 import { hintRoutes } from './modules/hints/routes';
 import { solutionRoutes } from './modules/solutions/routes';
-import { submissionRoutes, type Backpressure } from './modules/submissions/routes';
+import { submissionRoutes, type Backpressure, type Quota } from './modules/submissions/routes';
 import { queueAdminRoutes } from './modules/submissions/admin-routes';
 import { InMemorySubmissionQueue, type SubmissionQueue } from './modules/submissions/queue';
 import { InMemoryAuthStore, type AuthStore } from './modules/auth/store';
@@ -57,7 +58,27 @@ export interface AppOptions {
   daily?: DailyChallengeStore;
   /** Real-time events for Socket.IO (PostgresEventSource). No gateway without it. */
   events?: EventSource;
+  /** Per-user submission quotas (429 QUOTA_EXCEEDED). Env: SUBMIT_QUOTA_PER_MINUTE / _PER_DAY. */
+  quota?: Partial<Quota>;
+  /** Requests per minute per IP and per signed-in user (429 RATE_LIMITED). Env: RATE_LIMIT_IP_PER_MIN / _USER_PER_MIN. */
+  rateLimit?: Partial<{ perIp: number; perUser: number }>;
+  /** Browser origins allowed by CORS and Socket.IO. Env: CORS_ORIGINS (comma-separated). */
+  corsOrigins?: string[];
+  /** Audit trail for submissions (PostgresAuditRepository). Nothing is recorded without it. */
+  audit?: AuditRepository;
 }
+
+const envInt = (name: string, fallback: number) => Number(process.env[name]) || fallback;
+
+/** helmet's defaults that matter for a JSON API, without the dependency. */
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'strict-transport-security': 'max-age=15552000; includeSubDomains',
+  'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+  'cross-origin-opener-policy': 'same-origin',
+};
 
 export function buildApp(opts: AppOptions = {}) {
   const secret = process.env.JWT_SECRET;
@@ -70,6 +91,10 @@ export function buildApp(opts: AppOptions = {}) {
     // pino binds reqId to every req.log line; clients/proxies may pass their own x-request-id.
     requestIdHeader: 'x-request-id',
     genReqId: () => randomUUID(),
+    // The largest legal body is a 100 000-character submission; anything far above that is refused with 413.
+    bodyLimit: 512 * 1024,
+    // Behind a reverse proxy, req.ip (rate limits, audit) must come from X-Forwarded-For, not the proxy's address.
+    trustProxy: process.env.TRUST_PROXY === 'true',
   });
 
   const submissions = opts.submissions ?? new InMemorySubmissionRepository();
@@ -96,18 +121,32 @@ export function buildApp(opts: AppOptions = {}) {
       retryAfterS: Number(process.env.QUEUE_RETRY_AFTER_S) || 10,
       ...opts.backpressure,
     },
+    quota: {
+      perMinute: envInt('SUBMIT_QUOTA_PER_MINUTE', 10),
+      perDay: envInt('SUBMIT_QUOTA_PER_DAY', 500),
+      ...opts.quota,
+    },
+    audit: opts.audit,
   };
+  const limits = { perIp: envInt('RATE_LIMIT_IP_PER_MIN', 300), perUser: envInt('RATE_LIMIT_USER_PER_MIN', 120), ...opts.rateLimit };
+  const ipLimiter = new RateLimiter(limits.perIp);
+  const userLimiter = new RateLimiter(limits.perUser);
 
-  app.register(fastifyCors);
+  // Unset: any origin in development, none in production (native mobile and the CLI send no Origin, so they still work).
+  const allowList = opts.corsOrigins ?? process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean);
+  const corsOrigin = allowList?.length ? allowList : process.env.NODE_ENV !== 'production';
+
+  app.register(fastifyCors, { origin: corsOrigin });
   app.register(fastifyJwt, { secret: secret ?? 'dev-secret-change-me' });
 
   app.decorate('authenticate', authenticate);
 
   app.addHook('onSend', async (req, reply) => {
     reply.header('x-request-id', req.id);
+    reply.headers(SECURITY_HEADERS);
   });
 
-  app.setErrorHandler((err, req, reply) => {
+  app.setErrorHandler((err: FastifyError, req, reply) => {
     let statusCode = 500;
     let error = 'INTERNAL_ERROR';
     let message = 'Internal server error';
@@ -143,8 +182,24 @@ export function buildApp(opts: AppOptions = {}) {
     });
   });
 
+  const tooMany = (reply: { header: (k: string, v: string) => unknown }, retryAfterS: number, who: string) => {
+    reply.header('retry-after', String(retryAfterS));
+    return new HttpError(429, 'RATE_LIMITED', `Too many requests from this ${who}; retry in ${retryAfterS}s`);
+  };
+
   app.register(
     async (api) => {
+      // Per IP before anything else runs (also covers unauthenticated routes like login and register).
+      api.addHook('onRequest', async (req, reply) => {
+        const wait = ipLimiter.hit(req.ip);
+        if (wait) throw tooMany(reply, wait, 'IP');
+      });
+      // Per user once a route's own onRequest (authenticate) has set req.user: one account behind many IPs is still capped.
+      api.addHook('preHandler', async (req, reply) => {
+        const sub = (req.user as { sub?: string } | undefined)?.sub;
+        const wait = sub ? userLimiter.hit(sub) : 0;
+        if (wait) throw tooMany(reply, wait, 'user');
+      });
       api.get('/health', async () => ({ status: 'ok', service: 'dsa-portal-server' }));
       await api.register(problemRoutes, deps);
       await api.register(hintRoutes, deps);
@@ -160,6 +215,7 @@ export function buildApp(opts: AppOptions = {}) {
     { prefix: '/api/v1' }
   );
 
-  if (opts.events) attachRealtime(app, opts.events);
+  if (opts.events) attachRealtime(app, opts.events, corsOrigin);
   return app;
 }
+
