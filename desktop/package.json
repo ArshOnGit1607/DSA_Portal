@@ -42,16 +42,19 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.education",
-      "artifactName": "DSA-Practice-${version}-${arch}.${ext}"
+      "artifactName": "DSA-Practice-${version}-${arch}.${ext}",
+      "icon": "assets/icon.png"
     },
     "win": {
       "target": "nsis",
-      "artifactName": "DSA-Practice-Setup-${version}.${ext}"
+      "artifactName": "DSA-Practice-Setup-${version}.${ext}",
+      "icon": "assets/icon.png"
     },
     "linux": {
       "target": "AppImage",
       "category": "Education",
-      "artifactName": "DSA-Practice-${version}-${arch}.${ext}"
+      "artifactName": "DSA-Practice-${version}-${arch}.${ext}",
+      "icon": "assets/icon.png"
     },
     "electronVersion": "28.3.3",
     "asarUnpack": [
