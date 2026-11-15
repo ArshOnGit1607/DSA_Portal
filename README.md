@@ -5,13 +5,35 @@ JavaScript and have it judged in a sandbox, with live results and progress stats
 four front ends: **CLI, Web, Desktop and Mobile**. Offline work syncs back to the server when you reconnect.
 
 [![CI](https://github.com/dipu01-code/DSA_Portal/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/dsa-practice-cli)](https://www.npmjs.com/package/dsa-practice-cli)
 ![Node 20](https://img.shields.io/badge/node-20.x-339933)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
 
 ---
 
+## Try it
+
+| App                      | How                                                                                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Terminal (CLI)**       | `npm install -g dsa-practice-cli`, then run `dsa` (Node.js 20+). Works fully offline. [npm page](https://www.npmjs.com/package/dsa-practice-cli)                             |
+| **Desktop (macOS)**      | Download the `.dmg` from [GitHub Releases](https://github.com/dipu01-code/DSA_Portal/releases/tag/desktop-v0.0.1) (Apple Silicon). See [first launch](#desktop-first-launch) |
+| **Web**                  | [dsa-portal-web.onrender.com](https://dsa-portal-web.onrender.com). The free server sleeps when idle, so the first load can take about a minute                              |
+| **Mobile (iOS/Android)** | Run it from source with Expo Go: see [Running the clients](#running-the-clients)                                                                                             |
+
+### Desktop first launch
+
+The app is not signed with an Apple Developer ID, so macOS blocks the first launch:
+
+1. Open the `.dmg` and drag **DSA Practice** into **Applications**.
+2. Open it from Applications. When macOS says it can't verify the developer, click **Done**.
+3. Go to **System Settings → Privacy & Security**, scroll down, click **Open Anyway** and confirm. This is only
+   needed once.
+
+If macOS says the app is "damaged", run `xattr -dr com.apple.quarantine "/Applications/DSA Practice.app"` once.
+
 ## Contents
 
+- [Try it](#try-it)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
@@ -28,8 +50,11 @@ four front ends: **CLI, Web, Desktop and Mobile**. Offline work syncs back to th
 
 ## Features
 
-- **Practice:** 8 topics (Arrays, Strings, LinkedList, Trees, Graphs, Dynamic Programming, Sorting, Searching) at
-  three difficulties, random problem selection, progressive hints and reference solutions.
+- **Practice:** 41 problems in 8 topics (Arrays, Strings, LinkedList, Trees, Graphs, Dynamic Programming, Sorting,
+  Searching) at three difficulties, random problem selection that skips recent problems, progressive hints and
+  reference solutions. Solutions are written in JavaScript as a `solve(input)` function.
+- **Terminal app:** the original CLI, published on npm. It judges locally in a child process and keeps your
+  attempted and solved problems in `~/.dsa-practice/stats.json`, so progress survives restarts.
 - **Sandboxed judging:** submissions run in an isolated child process with time and memory limits, against
   predefined test cases, on a separate, horizontally scalable worker.
 - **Live results:** submission status, leaderboard and daily-challenge updates over Socket.IO.
@@ -89,7 +114,7 @@ More detail: [docs/architecture.md](docs/architecture.md) · [queue design](docs
 | `core/`    | Shared engine: problems, hints, solutions, sandbox, sync protocol, SQLite storage     |
 | `server/`  | REST API + Socket.IO, PostgreSQL repositories, migrations, auth, cache, sync, health  |
 | `workers/` | Judging worker (PostgreSQL queue), metrics endpoint, load-test scripts                |
-| `cli/`     | The original terminal app                                                             |
+| `cli/`     | The original terminal app, published on npm as `dsa-practice-cli`                     |
 | `web/`     | React web app                                                                         |
 | `desktop/` | Electron desktop app                                                                  |
 | `mobile/`  | Expo (React Native) app                                                               |
@@ -123,12 +148,16 @@ log in, get a problem, submit, read the result) is in [server/README.md](server/
 
 ## Running the clients
 
-| Client  | Command                                        | Notes                                                                |
-| ------- | ---------------------------------------------- | -------------------------------------------------------------------- |
-| Web     | `npm run dev -w web`                           | Vite dev server; `npm run dev:mock -w web` runs it without a backend |
-| Desktop | `npm run dev -w desktop`                       | Installers: `npm run dist -w desktop`                                |
-| Mobile  | `npm run start -w mobile`                      | Expo; `npm run android -w mobile` for a device                       |
-| CLI     | `npm run build -w cli && npm run start -w cli` | Terminal practice mode                                               |
+| Client  | Command                                        | Notes                                                                         |
+| ------- | ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| Web     | `npm run dev -w web`                           | Vite dev server; `npm run dev:mock -w web` runs it without a backend          |
+| Desktop | `npm run dev -w desktop`                       | Installers: `npm run dist -w desktop`                                         |
+| Mobile  | `npm run start -w mobile`                      | Expo; scan the QR code with Expo Go. Run it from `mobile/`, not the repo root |
+| CLI     | `npm run build -w cli && npm run start -w cli` | Terminal practice mode; needs no server                                       |
+
+Run Expo only from `mobile/`. Started from the repo root, it rewrites the root `tsconfig.json` to extend
+`expo/tsconfig.base`, which turns on `noEmit` and silently stops every `tsc` build. Undo that with
+`git checkout tsconfig.json`.
 
 End-user guide: [docs/user-manual.md](docs/user-manual.md). Release builds: [docs/design/release.md](docs/design/release.md).
 
@@ -182,7 +211,8 @@ worker. If either stops, the service restarts.
 1. Sign in at [render.com](https://render.com) with GitHub and allow access to this repository.
 2. **New → Blueprint**, pick the repo; Render reads `render.yaml` and lists the three resources.
 3. Fill in the two prompted values (service URLs are `https://<service-name>.onrender.com`):
-   - `CORS_ORIGINS` (API): `https://dsa-portal-web.onrender.com`
+   - `CORS_ORIGINS` (API): `https://dsa-portal-web.onrender.com,app://dsa` (`app://dsa` is the desktop app; without
+     it the desktop app shows "No connection to the server" on login)
    - `VITE_API_URL` (web): `https://dsa-portal-api.onrender.com`
 4. **Apply**. The first build takes several minutes. If Render gives a service a different URL (name taken), update
    both values under the service's **Environment** tab, then redeploy the web app.
@@ -196,6 +226,29 @@ then takes about a minute, and submissions are judged only while it is awake. On
 (`WORKER_CONCURRENCY=1`, 512 MB). The free PostgreSQL is time-limited; switch its `plan` to a paid one to keep the
 data. Every push to `main` redeploys automatically. Point desktop and mobile builds at the API URL to use the same
 backend.
+
+### Desktop release (macOS .dmg)
+
+```bash
+npm run build -w core && npm run build -w web
+cd desktop && DSA_API_URL=https://dsa-portal-api.onrender.com node build.mjs   # bakes the API URL into the app
+npx electron-builder --mac dmg                                                  # → desktop/release/*.dmg
+```
+
+Without `DSA_API_URL` the app talks to `http://localhost:3000`. The build ad-hoc signs the app
+([`desktop/adhoc-sign.cjs`](desktop/adhoc-sign.cjs)); without that, macOS on Apple Silicon reports the downloaded app
+as "damaged". Upload the `.dmg` to a GitHub Release (`gh release create`).
+
+### CLI on npm
+
+```bash
+cd cli
+npm version patch       # bump the version
+npm publish             # builds first (prepublishOnly); needs `npm login` and your 2FA approval
+```
+
+The CLI and `core` are bundled into one file ([`cli/build.mjs`](cli/build.mjs)), with the sandbox script and the
+problem bank shipped next to it, so the package has no runtime dependencies.
 
 ### Self-hosted (Docker Compose)
 
@@ -272,3 +325,11 @@ Changes to an agreed endpoint, table column or WebSocket event go through
 - The production stack is smoke-tested end to end (20 checks through nginx), but not load-tested in containers.
 - Per-test results in the API carry `passed`/`actual`/`expected` only, so clients cannot tell a timeout from a
   wrong answer.
+- **JavaScript only.** Python and C++ are not supported yet. Python is planned as WebAssembly (Pyodide) inside the
+  same sandbox. C++ needs a separate, isolated judge machine, because it would run as native code next to the
+  server's secrets.
+- **Desktop builds are macOS Apple Silicon only** and not notarized, so users see the first-launch prompt above.
+  Notarization needs a paid Apple Developer account.
+- **CLI stats are local** to one computer and separate from the account stats of the web, desktop and mobile apps.
+- The problem bank lives in two places: `core/problems/*.json` (CLI and offline engine) and the database seed
+  (`server/src/db/seeds/problems-data.ts`). Edit both when changing a problem ([CR-030](docs/CHANGE_REQUESTS.md)).
