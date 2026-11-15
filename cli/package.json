@@ -1,19 +1,41 @@
 {
-  "name": "@dsa-portal/cli",
-  "version": "0.0.1",
+  "name": "dsa-practice-cli",
+  "version": "1.0.0",
+  "description": "Practise data structures and algorithms in your terminal: pick a topic and difficulty, solve in JavaScript, get instant test results, hints and solutions.",
+  "keywords": [
+    "dsa",
+    "algorithms",
+    "data-structures",
+    "practice",
+    "interview",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dipu01-code/DSA_Portal.git",
+    "directory": "cli"
+  },
   "bin": {
     "dsa": "dist/index.js"
   },
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsc --watch"
+  "files": [
+    "dist/index.js",
+    "dist/sandbox-exec.js",
+    "problems"
+  ],
+  "engines": {
+    "node": ">=20"
   },
-  "dependencies": {
-    "@dsa-portal/core": "*"
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^20.11.0"
+    "@dsa-portal/core": "*",
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.0"
   }
 }
