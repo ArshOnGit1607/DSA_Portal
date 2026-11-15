@@ -64,7 +64,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "afterPack": "adhoc-sign.cjs"
   },
   "author": "DSA Portal team"
 }
