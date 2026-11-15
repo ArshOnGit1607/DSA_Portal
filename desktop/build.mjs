@@ -10,7 +10,9 @@ const common = {
   sourcemap: true,
   logLevel: 'info',
   // Release builds: `DSA_API_URL=https://... npm run build` bakes the API into the app; otherwise it reads the env at runtime.
-  define: process.env.DSA_API_URL ? { 'process.env.DSA_API_URL': JSON.stringify(process.env.DSA_API_URL) } : {},
+  define: process.env.DSA_API_URL
+    ? { 'process.env.DSA_API_URL': JSON.stringify(process.env.DSA_API_URL) }
+    : {},
 };
 await build({
   ...common,
