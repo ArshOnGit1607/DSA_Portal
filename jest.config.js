@@ -3,6 +3,7 @@ module.exports = {
   rootDir: '.',
   testMatch: [
     '<rootDir>/core/__tests__/**/*.test.ts',
+    '<rootDir>/cli/__tests__/**/*.test.ts',
     '<rootDir>/web/__tests__/**/*.test.ts',
     '<rootDir>/desktop/__tests__/**/*.test.ts',
     '<rootDir>/mobile/__tests__/**/*.test.ts',

@@ -348,3 +348,12 @@ Log any proposed change to an agreed endpoint, table column, or WebSocket event 
 - **After 1 lands:** Person 1 registers `syncRoutes` in `app.ts` and adds the sync endpoints to `openapi.yaml` (CR-028).
 - **Status:** done (final scan): all 5 items fixed (pool exports, `req.user.sub`, migration 007, security test on TEST_DATABASE_URL, CORS_ORIGINS); plus sync submission upsert scoped to the owner and `solved` boolean fix, see handover
 - **Approved by:** —
+
+## CR-030
+
+- **Proposed by:** Person 1 (2026-11-15), **for Person 2** (owner of `server/src/db/seeds`)
+- **What changed:** the CLI brief needs the full problem bank, but `core/problems/` had only 3 problems (one per topic, all Easy). The 38 seed problems that were missing (`server/src/db/seeds/problems-data.ts`) are now also stored as JSON in `core/problems/` (41 in total, including the CLI-only `palindrome-number`). The seed file itself was not edited. `two-sum` and `merge-two-sorted-lists` keep their original core versions because core tests depend on their 3 test cases and 2 hints.
+- **Why it matters to you:** the problem text now lives in two places. If you edit a seed problem, update the matching `core/problems/<id>.json` too, or the CLI and the offline engine will show the old version. A cleaner fix later is to have the seed import from `core/problems` (one source of truth).
+- **Also:** the root `jest.config.js` now runs `cli/__tests__`, and the root `build` script also builds `cli`, so CI type-checks it.
+- **Status:** done
+- **Approved by:** —

@@ -74,3 +74,33 @@ Done with the whole team's folders unlocked. Nothing committed yet.
   headers). Jest 32/32 suites (217 passed, 2 skipped).
 - **Known issues:** offline submissions pushed through `/sync/push` are trusted as judged by the client.
   The API's per-test results don't include the error text (timeouts look like wrong answers). Old local dev DBs that recorded `004_session_families` need `npm run db:reset`.
+
+## CLI brief gaps closed (2026-11-15)
+
+### What was built
+
+1. **Persistent CLI stats (JSON).** `cli/src/stats.ts` saves attempted and solved problem IDs plus a submission count to `~/.dsa-practice/stats.json` after every submission and loads them at start-up. Writes go to a temp file that is then renamed over the old one, so a crash mid-write never corrupts the file. An unreadable file is moved to `stats.json.bak` and the CLI starts fresh with a warning. The main menu has a new **2. View my stats** option (solved list and attempted-but-unsolved list); Exit is now **3**.
+2. **Full problem bank in the CLI.** `core/problems/` now holds 41 problems (8 topics × Easy/Medium/Hard, 5 per topic) instead of 3, so topic and difficulty choices in the CLI are meaningful. See CR-030.
+
+### How to run it
+
+```
+npm run build -w core && npm run build -w cli
+node cli/dist/index.js
+```
+
+### Tests
+
+- `cli/__tests__/stats.test.ts`: first run, save and reload after a restart, no duplicate IDs, corrupt files kept as `.bak`.
+- `core/__tests__/problems.test.ts`: every topic and difficulty is covered, and every problem's reference solution passes its own tests in the sandbox (41 runs).
+- Three tests used "Graphs + Hard" as an empty pair; they now use "Sorting + Hard", which still has no problem.
+
+### For others
+
+- No endpoint, table or event changed. The server's in-memory mode (`InMemoryProblemRepository` default) now also serves 41 problems.
+- The root `tsconfig.json` must not extend `expo/tsconfig.base`. Expo adds that line when `npx expo start` is run from the repo root (run it from `mobile/`), and it sets `noEmit`, which silently stops every `tsc` build.
+
+### Known issues
+
+- Seed problems are duplicated in `core/problems/` (CR-030).
+- The CLI keeps one stats file per OS user, and its stats are separate from the web/desktop/mobile account stats.

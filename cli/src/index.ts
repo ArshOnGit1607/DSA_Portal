@@ -10,6 +10,7 @@ import {
   type Topic,
   type Difficulty,
 } from '@dsa-portal/core';
+import { loadStats, recordSubmission, saveStats } from './stats';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -20,7 +21,9 @@ const rl = readline.createInterface({
 const problems: Problem[] = PROBLEMS;
 const recentIds: string[] = [];
 const MAX_RECENT = 5;
-const stats = { attempted: 0, solved: 0 };
+// Persisted to ~/.dsa-practice/stats.json after every submission, so progress survives restarts.
+const loaded = loadStats();
+let stats = loaded.stats;
 
 const hintService = new HintService();
 const solutionService = new SolutionService();
@@ -92,10 +95,10 @@ async function runSubmission(p: Problem) {
   const userCode = lines.join('\n');
 
   const result: ExecutionResult = submitCode({ problem: p, userCode });
-  stats.attempted += 1;
+  stats = recordSubmission(stats, p.id, result.status === 'passed');
+  saveStats(stats);
   const passedCount = result.perTest.filter((r) => r.passed).length;
   if (result.status === 'passed') {
-    stats.solved += 1;
     console.log(`\n✅ All ${passedCount}/${result.perTest.length} test cases passed!`);
   } else if (result.status === 'timeout') {
     console.log(`\n⏱️  Submission timed out (${passedCount}/${result.perTest.length} passed).`);
@@ -134,13 +137,30 @@ async function showSolution(p: Problem) {
   if (sol.explanation) console.log(`\n${sol.explanation}`);
 }
 
+function showStats() {
+  const title = (id: string) => problems.find((p) => p.id === id)?.title ?? id;
+  const unsolved = stats.attempted.filter((id) => !stats.solved.includes(id));
+  console.log('\n--- Your stats ---');
+  console.log(`Submissions: ${stats.submissions}`);
+  console.log(
+    `Solved (${stats.solved.length}): ${stats.solved.map(title).join(', ') || 'none yet'}`
+  );
+  console.log(
+    `Attempted, not solved (${unsolved.length}): ${unsolved.map(title).join(', ') || 'none'}`
+  );
+}
+
 async function main() {
   console.log('Welcome to DSA Practice CLI');
+  if (loaded.warning) console.log(loaded.warning);
 
   for (;;) {
-    console.log(`\nStats: ${stats.solved}/${stats.attempted} solved`);
+    console.log(
+      `\nStats: ${stats.solved.length} solved / ${stats.attempted.length} attempted of ${problems.length} problems`
+    );
     console.log('1. Choose & solve a problem');
-    console.log('2. Exit');
+    console.log('2. View my stats');
+    console.log('3. Exit');
     const choice = await prompt('Select an option: ');
 
     if (choice === '1') {
@@ -156,6 +176,8 @@ async function main() {
         }
       }
     } else if (choice === '2') {
+      showStats();
+    } else if (choice === '3') {
       console.log('Goodbye!');
       break;
     }

@@ -28,7 +28,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "jest",
-    "build": "npm run build -w core -w server -w workers",
+    "build": "npm run build -w core -w cli -w server -w workers",
     "db:up": "docker compose -f infra/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker-compose.yml down",
     "db:migrate": "npm run db:migrate -w server",
