@@ -148,7 +148,7 @@ describe('every implemented route matches /docs/openapi.yaml', () => {
     },
     {
       route: 'GET /api/v1/problems/random',
-      url: '/api/v1/problems/random?topic=Graphs',
+      url: '/api/v1/problems/random?topic=Sorting&difficulty=Hard',
       status: 404,
       token: 'A',
     },

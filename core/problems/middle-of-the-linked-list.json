@@ -1,0 +1,58 @@
+{
+  "id": "middle-of-the-linked-list",
+  "title": "Middle of the Linked List",
+  "topic": "LinkedList",
+  "difficulty": "Easy",
+  "description": "Given the `head` of a singly linked list represented as an array of values, return the middle node and all subsequent nodes. If there are two middle nodes, return the second middle node.",
+  "starterCode": "function solve(input) {\n  const { list } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "list": [1, 2, 3, 4, 5]
+      },
+      "expected": [3, 4, 5]
+    },
+    {
+      "input": {
+        "list": [1, 2, 3, 4, 5, 6]
+      },
+      "expected": [4, 5, 6]
+    },
+    {
+      "input": {
+        "list": [1]
+      },
+      "expected": [1]
+    },
+    {
+      "input": {
+        "list": [1, 2]
+      },
+      "expected": [2]
+    },
+    {
+      "input": {
+        "list": []
+      },
+      "expected": []
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Fast and slow pointer approach."
+    },
+    {
+      "level": 2,
+      "content": "Fast pointer moves twice as fast as slow pointer."
+    },
+    {
+      "level": 3,
+      "content": "When fast reaches the end, slow is at the middle. For array, slice from Math.floor(len / 2)."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { list } = input;\n  const mid = Math.floor(list.length / 2);\n  return list.slice(mid);\n}",
+    "explanation": "Finding middle index via two pointers or Math.floor(n / 2).\nTime Complexity: O(n)\nSpace Complexity: O(n)"
+  }
+}

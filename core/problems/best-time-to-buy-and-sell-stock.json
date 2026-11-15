@@ -1,0 +1,58 @@
+{
+  "id": "best-time-to-buy-and-sell-stock",
+  "title": "Best Time to Buy and Sell Stock",
+  "topic": "Arrays",
+  "difficulty": "Easy",
+  "description": "You are given an array `prices` where `prices[i]` is the price of a given stock on the `i-th` day. You want to maximize your profit by choosing a single day to buy one stock and choosing a different day in the future to sell that stock. Return the maximum profit you can achieve.",
+  "starterCode": "function solve(input) {\n  const { prices } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "prices": [7, 1, 5, 3, 6, 4]
+      },
+      "expected": 5
+    },
+    {
+      "input": {
+        "prices": [7, 6, 4, 3, 1]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "prices": [2, 4, 1]
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "prices": [1]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "prices": [3, 3, 3, 3]
+      },
+      "expected": 0
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Keep track of the minimum price observed so far as you iterate."
+    },
+    {
+      "level": 2,
+      "content": "At each day, the potential profit is prices[i] - minPrice."
+    },
+    {
+      "level": 3,
+      "content": "Maintain minPrice and maxProfit in a single pass through the array."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { prices } = input;\n  let minPrice = Infinity;\n  let maxProfit = 0;\n  for (const price of prices) {\n    if (price < minPrice) minPrice = price;\n    else if (price - minPrice > maxProfit) maxProfit = price - minPrice;\n  }\n  return maxProfit;\n}",
+    "explanation": "Track the minimum purchase price seen so far and compare the current profit with the maximum profit seen so far.\nTime Complexity: O(n)\nSpace Complexity: O(1)"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "binary-search",
+  "title": "Binary Search",
+  "topic": "Searching",
+  "difficulty": "Easy",
+  "description": "Given an array of integers `nums` which is sorted in ascending order, and an integer `target`, write a function to search `target` in `nums`. If `target` exists, then return its index. Otherwise, return `-1`. You must write an algorithm with O(log n) runtime complexity.",
+  "starterCode": "function solve(input) {\n  const { nums, target } = input;\n  // Your solution here\n  return -1;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [-1, 0, 3, 5, 9, 12],
+        "target": 9
+      },
+      "expected": 4
+    },
+    {
+      "input": {
+        "nums": [-1, 0, 3, 5, 9, 12],
+        "target": 2
+      },
+      "expected": -1
+    },
+    {
+      "input": {
+        "nums": [5],
+        "target": 5
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "nums": [5],
+        "target": -5
+      },
+      "expected": -1
+    },
+    {
+      "input": {
+        "nums": [1, 2, 3, 4, 5, 6, 7, 8],
+        "target": 1
+      },
+      "expected": 0
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Divide search space in half at each step with low and high pointers."
+    },
+    {
+      "level": 2,
+      "content": "mid = Math.floor((low + high) / 2)."
+    },
+    {
+      "level": 3,
+      "content": "If nums[mid] === target return mid; else adjust low = mid + 1 or high = mid - 1."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums, target } = input;\n  let low = 0, high = nums.length - 1;\n  while (low <= high) {\n    const mid = Math.floor((low + high) / 2);\n    if (nums[mid] === target) return mid;\n    if (nums[mid] < target) low = mid + 1;\n    else high = mid - 1;\n  }\n  return -1;\n}",
+    "explanation": "Standard binary search halving the interval each step.\nTime Complexity: O(log n)\nSpace Complexity: O(1)"
+  }
+}

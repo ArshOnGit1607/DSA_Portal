@@ -1,0 +1,68 @@
+{
+  "id": "number-of-islands",
+  "title": "Number of Islands",
+  "topic": "Graphs",
+  "difficulty": "Medium",
+  "description": "Given an `m x n` 2D binary grid `grid` which represents a map of \"1\"s (land) and \"0\"s (water), return the number of islands. An island is surrounded by water and is formed by connecting adjacent lands horizontally or vertically.",
+  "starterCode": "function solve(input) {\n  const { grid } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "grid": [
+          ["1", "1", "1", "1", "0"],
+          ["1", "1", "0", "1", "0"],
+          ["1", "1", "0", "0", "0"],
+          ["0", "0", "0", "0", "0"]
+        ]
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "grid": [
+          ["1", "1", "0", "0", "0"],
+          ["1", "1", "0", "0", "0"],
+          ["0", "0", "1", "0", "0"],
+          ["0", "0", "0", "1", "1"]
+        ]
+      },
+      "expected": 3
+    },
+    {
+      "input": {
+        "grid": [["1"]]
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "grid": [["0"]]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "grid": []
+      },
+      "expected": 0
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Iterate through the grid. When you find a \"1\", increment island count and sink the island."
+    },
+    {
+      "level": 2,
+      "content": "Use DFS or BFS to visit and mark all connected \"1\"s as \"0\"."
+    },
+    {
+      "level": 3,
+      "content": "dfs(r, c) explores (r+1,c), (r-1,c), (r,c+1), (r,c-1)."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { grid } = input;\n  if (!grid || grid.length === 0) return 0;\n  const m = grid.length, n = grid[0].length;\n  let islands = 0;\n  function dfs(r, c) {\n    if (r < 0 || c < 0 || r >= m || c >= n || grid[r][c] !== \"1\") return;\n    grid[r][c] = \"0\";\n    dfs(r + 1, c);\n    dfs(r - 1, c);\n    dfs(r, c + 1);\n    dfs(r, c - 1);\n  }\n  for (let r = 0; r < m; r++) {\n    for (let c = 0; c < n; c++) {\n      if (grid[r][c] === \"1\") {\n        islands++;\n        dfs(r, c);\n      }\n    }\n  }\n  return islands;\n}",
+    "explanation": "DFS graph flood-fill. Sink connected land cells to 0 upon discovery.\nTime Complexity: O(m * n)\nSpace Complexity: O(m * n)"
+  }
+}

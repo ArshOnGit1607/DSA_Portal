@@ -1,0 +1,58 @@
+{
+  "id": "longest-common-prefix",
+  "title": "Longest Common Prefix",
+  "topic": "Strings",
+  "difficulty": "Easy",
+  "description": "Write a function to find the longest common prefix string amongst an array of strings. If there is no common prefix, return an empty string `\"\"`.",
+  "starterCode": "function solve(input) {\n  const { strs } = input;\n  // Your solution here\n  return \"\";\n}",
+  "testCases": [
+    {
+      "input": {
+        "strs": ["flower", "flow", "flight"]
+      },
+      "expected": "fl"
+    },
+    {
+      "input": {
+        "strs": ["dog", "racecar", "car"]
+      },
+      "expected": ""
+    },
+    {
+      "input": {
+        "strs": ["interspecies", "interstellar", "interstate"]
+      },
+      "expected": "inters"
+    },
+    {
+      "input": {
+        "strs": ["throne", "throne"]
+      },
+      "expected": "throne"
+    },
+    {
+      "input": {
+        "strs": ["a"]
+      },
+      "expected": "a"
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Start by assuming the first string is the common prefix."
+    },
+    {
+      "level": 2,
+      "content": "Trim the prefix from the end while the next string does not start with it."
+    },
+    {
+      "level": 3,
+      "content": "while (str.indexOf(prefix) !== 0) prefix = prefix.slice(0, -1)."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { strs } = input;\n  if (!strs || strs.length === 0) return \"\";\n  let prefix = strs[0];\n  for (let i = 1; i < strs.length; i++) {\n    while (strs[i].indexOf(prefix) !== 0) {\n      prefix = prefix.slice(0, prefix.length - 1);\n      if (prefix === \"\") return \"\";\n    }\n  }\n  return prefix;\n}",
+    "explanation": "Horizontal scanning: compare prefix against each string, shortening the prefix until it matches.\nTime Complexity: O(S) where S is sum of all characters in strings\nSpace Complexity: O(1)"
+  }
+}

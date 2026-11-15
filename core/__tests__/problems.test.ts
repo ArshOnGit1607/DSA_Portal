@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { PROBLEMS, getProblem, getRandomProblem, listProblems } from '../src/problems';
+import { submitCodeSandbox } from '../src/sandbox';
 
 describe('problems', () => {
   it('loads problems from JSON files', () => {
@@ -25,7 +26,7 @@ describe('problems', () => {
   });
 
   it('getRandomProblem returns null when no match', () => {
-    const p = getRandomProblem({ topic: 'Graphs', difficulty: 'Hard' });
+    const p = getRandomProblem({ topic: 'Sorting', difficulty: 'Hard' });
     expect(p).toBeNull();
   });
 
@@ -37,4 +38,18 @@ describe('problems', () => {
     expect(list[0]).toHaveProperty('topic');
     expect(list[0]).toHaveProperty('difficulty');
   });
+});
+
+describe('problem bank', () => {
+  it('covers every topic and difficulty the CLI offers', () => {
+    expect(new Set(PROBLEMS.map((p) => p.topic)).size).toBe(8);
+    expect(new Set(PROBLEMS.map((p) => p.difficulty))).toEqual(new Set(['Easy', 'Medium', 'Hard']));
+  });
+
+  it.each(PROBLEMS.map((p) => [p.id, p] as const))(
+    "%s: the reference solution passes the problem's own tests",
+    (_id, p) => {
+      expect(submitCodeSandbox(p, p.solution.code).status).toBe('passed');
+    }
+  );
 });

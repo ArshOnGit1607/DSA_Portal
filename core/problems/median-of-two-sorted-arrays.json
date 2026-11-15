@@ -1,0 +1,63 @@
+{
+  "id": "median-of-two-sorted-arrays",
+  "title": "Median of Two Sorted Arrays",
+  "topic": "Searching",
+  "difficulty": "Hard",
+  "description": "Given two sorted arrays `nums1` and `nums2` of size `m` and `n` respectively, return the median of the two sorted arrays. The overall run time complexity should be O(log (m+n)).",
+  "starterCode": "function solve(input) {\n  const { nums1, nums2 } = input;\n  // Your solution here\n  return 0.0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums1": [1, 3],
+        "nums2": [2]
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "nums1": [1, 2],
+        "nums2": [3, 4]
+      },
+      "expected": 2.5
+    },
+    {
+      "input": {
+        "nums1": [0, 0],
+        "nums2": [0, 0]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "nums1": [],
+        "nums2": [1]
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "nums1": [2],
+        "nums2": []
+      },
+      "expected": 2
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Partition both arrays such that left half has (m + n + 1) / 2 elements."
+    },
+    {
+      "level": 2,
+      "content": "Binary search the partition index on the smaller array."
+    },
+    {
+      "level": 3,
+      "content": "Check if maxLeft1 <= minRight2 and maxLeft2 <= minRight1. If so, calculate median."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  let { nums1, nums2 } = input;\n  if (nums1.length > nums2.length) [nums1, nums2] = [nums2, nums1];\n  const m = nums1.length, n = nums2.length;\n  let low = 0, high = m;\n  while (low <= high) {\n    const i = Math.floor((low + high) / 2);\n    const j = Math.floor((m + n + 1) / 2) - i;\n    const maxL1 = i === 0 ? -Infinity : nums1[i - 1];\n    const minR1 = i === m ? Infinity : nums1[i];\n    const maxL2 = j === 0 ? -Infinity : nums2[j - 1];\n    const minR2 = j === n ? Infinity : nums2[j];\n    if (maxL1 <= minR2 && maxL2 <= minR1) {\n      if ((m + n) % 2 === 1) return Math.max(maxL1, maxL2);\n      return (Math.max(maxL1, maxL2) + Math.min(minR1, minR2)) / 2;\n    } else if (maxL1 > minR2) {\n      high = i - 1;\n    } else {\n      low = i + 1;\n    }\n  }\n  return 0;\n}",
+    "explanation": "Binary search partition on the smaller array ensuring max(left) <= min(right).\nTime Complexity: O(log(min(m, n)))\nSpace Complexity: O(1)"
+  }
+}

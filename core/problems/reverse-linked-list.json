@@ -1,0 +1,58 @@
+{
+  "id": "reverse-linked-list",
+  "title": "Reverse Linked List",
+  "topic": "LinkedList",
+  "difficulty": "Easy",
+  "description": "Given the `head` of a singly linked list represented as an array of values, reverse the list, and return the reversed list.",
+  "starterCode": "function solve(input) {\n  const { list } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "list": [1, 2, 3, 4, 5]
+      },
+      "expected": [5, 4, 3, 2, 1]
+    },
+    {
+      "input": {
+        "list": [1, 2]
+      },
+      "expected": [2, 1]
+    },
+    {
+      "input": {
+        "list": []
+      },
+      "expected": []
+    },
+    {
+      "input": {
+        "list": [7]
+      },
+      "expected": [7]
+    },
+    {
+      "input": {
+        "list": [10, 20, 30]
+      },
+      "expected": [30, 20, 10]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Iterate through the list while maintaining a reference to the previous element."
+    },
+    {
+      "level": 2,
+      "content": "In an iterative pointer approach, prev = null, curr = head. At each step, next = curr.next, curr.next = prev, prev = curr, curr = next."
+    },
+    {
+      "level": 3,
+      "content": "For array representation, reversing in-place or unshifting produces the reversed sequence."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { list } = input;\n  const res = [];\n  for (let i = list.length - 1; i >= 0; i--) {\n    res.push(list[i]);\n  }\n  return res;\n}",
+    "explanation": "Reverse the linked list elements in linear time.\nTime Complexity: O(n)\nSpace Complexity: O(n)"
+  }
+}

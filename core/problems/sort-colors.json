@@ -1,0 +1,58 @@
+{
+  "id": "sort-colors",
+  "title": "Sort Colors",
+  "topic": "Sorting",
+  "difficulty": "Medium",
+  "description": "Given an array `nums` with `n` objects colored red, white, or blue, sort them in-place so that objects of the same color are adjacent, with the colors in the order red (0), white (1), and blue (2). Return the sorted array.",
+  "starterCode": "function solve(input) {\n  const { nums } = input;\n  // Your solution here\n  return nums;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [2, 0, 2, 1, 1, 0]
+      },
+      "expected": [0, 0, 1, 1, 2, 2]
+    },
+    {
+      "input": {
+        "nums": [2, 0, 1]
+      },
+      "expected": [0, 1, 2]
+    },
+    {
+      "input": {
+        "nums": [0]
+      },
+      "expected": [0]
+    },
+    {
+      "input": {
+        "nums": [1]
+      },
+      "expected": [1]
+    },
+    {
+      "input": {
+        "nums": [2, 2, 1, 0]
+      },
+      "expected": [0, 1, 2, 2]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Dutch National Flag algorithm."
+    },
+    {
+      "level": 2,
+      "content": "Maintain three pointers: low, mid, high."
+    },
+    {
+      "level": 3,
+      "content": "If nums[mid] === 0, swap(low, mid), low++, mid++. If nums[mid] === 1, mid++. If nums[mid] === 2, swap(mid, high), high--."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums } = input;\n  let low = 0, mid = 0, high = nums.length - 1;\n  while (mid <= high) {\n    if (nums[mid] === 0) {\n      [nums[low], nums[mid]] = [nums[mid], nums[low]];\n      low++; mid++;\n    } else if (nums[mid] === 1) {\n      mid++;\n    } else {\n      [nums[mid], nums[high]] = [nums[high], nums[mid]];\n      high--;\n    }\n  }\n  return nums;\n}",
+    "explanation": "Dutch National Flag 3-pointer partition in a single pass.\nTime Complexity: O(n)\nSpace Complexity: O(1)"
+  }
+}

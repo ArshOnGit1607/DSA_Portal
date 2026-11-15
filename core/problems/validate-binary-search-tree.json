@@ -1,0 +1,58 @@
+{
+  "id": "validate-binary-search-tree",
+  "title": "Validate Binary Search Tree",
+  "topic": "Trees",
+  "difficulty": "Medium",
+  "description": "Given the root of a binary tree represented as an array, determine if it is a valid binary search tree (BST). A valid BST requires all left subtree nodes to be strictly less than the root, and all right subtree nodes to be strictly greater than the root. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.",
+  "starterCode": "function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "tree": [2, 1, 3]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "tree": [5, 1, 4, null, null, 3, 6]
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "tree": [10, 5, 15, null, null, 6, 20]
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "tree": [1]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "tree": []
+      },
+      "expected": true
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Every node must satisfy a valid range: min < val < max."
+    },
+    {
+      "level": 2,
+      "content": "Passing left: max bound becomes node.val. Passing right: min bound becomes node.val."
+    },
+    {
+      "level": 3,
+      "content": "function validate(idx, min, max) { if (tree[idx] <= min || tree[idx] >= max) return false; ... }."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { tree } = input;\n  if (!tree || tree.length === 0) return true;\n  function validate(idx, min, max) {\n    if (idx >= tree.length || tree[idx] === null || tree[idx] === undefined) return true;\n    const val = tree[idx];\n    if (val <= min || val >= max) return false;\n    return validate(2 * idx + 1, min, val) && validate(2 * idx + 2, val, max);\n  }\n  return validate(0, -Infinity, Infinity);\n}",
+    "explanation": "DFS passing valid range bounds down to children. Left child bounded by (min, val), right child bounded by (val, max).\nTime Complexity: O(n)\nSpace Complexity: O(h)"
+  }
+}

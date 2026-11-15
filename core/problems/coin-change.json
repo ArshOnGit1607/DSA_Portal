@@ -1,0 +1,63 @@
+{
+  "id": "coin-change",
+  "title": "Coin Change",
+  "topic": "Dynamic Programming",
+  "difficulty": "Medium",
+  "description": "You are given an integer array `coins` representing coins of different denominations and an integer `amount` representing a total amount of money. Return the fewest number of coins that you need to make up that amount. If that amount of money cannot be made up, return `-1`.",
+  "starterCode": "function solve(input) {\n  const { coins, amount } = input;\n  // Your solution here\n  return -1;\n}",
+  "testCases": [
+    {
+      "input": {
+        "coins": [1, 2, 5],
+        "amount": 11
+      },
+      "expected": 3
+    },
+    {
+      "input": {
+        "coins": [2],
+        "amount": 3
+      },
+      "expected": -1
+    },
+    {
+      "input": {
+        "coins": [1],
+        "amount": 0
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "coins": [1],
+        "amount": 2
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "coins": [2, 5, 10, 1],
+        "amount": 27
+      },
+      "expected": 4
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Define dp[i] as the minimum coins needed to make amount i."
+    },
+    {
+      "level": 2,
+      "content": "Initialize dp array of size amount + 1 filled with Infinity, with dp[0] = 0."
+    },
+    {
+      "level": 3,
+      "content": "For each coin: for i from coin to amount: dp[i] = min(dp[i], dp[i - coin] + 1)."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { coins, amount } = input;\n  const dp = new Array(amount + 1).fill(Infinity);\n  dp[0] = 0;\n  for (let i = 1; i <= amount; i++) {\n    for (const c of coins) {\n      if (i - c >= 0) {\n        dp[i] = Math.min(dp[i], dp[i - c] + 1);\n      }\n    }\n  }\n  return dp[amount] === Infinity ? -1 : dp[amount];\n}",
+    "explanation": "Bottom-up dynamic programming. dp[i] computes fewest coins to make amount i.\nTime Complexity: O(amount * len(coins))\nSpace Complexity: O(amount)"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "search-in-rotated-sorted-array",
+  "title": "Search in Rotated Sorted Array",
+  "topic": "Searching",
+  "difficulty": "Medium",
+  "description": "There is an integer array `nums` sorted in ascending order (with distinct values) that is rotated at an unknown pivot. Given the array `nums` and an integer `target`, return the index of `target` if it is in `nums`, or `-1` if it is not in `nums`. Algorithm must run in O(log n) time.",
+  "starterCode": "function solve(input) {\n  const { nums, target } = input;\n  // Your solution here\n  return -1;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [4, 5, 6, 7, 0, 1, 2],
+        "target": 0
+      },
+      "expected": 4
+    },
+    {
+      "input": {
+        "nums": [4, 5, 6, 7, 0, 1, 2],
+        "target": 3
+      },
+      "expected": -1
+    },
+    {
+      "input": {
+        "nums": [1],
+        "target": 0
+      },
+      "expected": -1
+    },
+    {
+      "input": {
+        "nums": [1, 3],
+        "target": 3
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "nums": [5, 1, 3],
+        "target": 5
+      },
+      "expected": 0
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "At least one half (left or right) of the array is always normally sorted."
+    },
+    {
+      "level": 2,
+      "content": "Check if target lies within the boundaries of the sorted half."
+    },
+    {
+      "level": 3,
+      "content": "If target is within sorted half, search there; otherwise search the other half."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums, target } = input;\n  let low = 0, high = nums.length - 1;\n  while (low <= high) {\n    const mid = Math.floor((low + high) / 2);\n    if (nums[mid] === target) return mid;\n    if (nums[low] <= nums[mid]) {\n      if (nums[low] <= target && target < nums[mid]) high = mid - 1;\n      else low = mid + 1;\n    } else {\n      if (nums[mid] < target && target <= nums[high]) low = mid + 1;\n      else high = mid - 1;\n    }\n  }\n  return -1;\n}",
+    "explanation": "Identify which half is sorted, then determine if the target lies within that half.\nTime Complexity: O(log n)\nSpace Complexity: O(1)"
+  }
+}

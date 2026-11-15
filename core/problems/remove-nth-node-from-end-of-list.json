@@ -1,0 +1,63 @@
+{
+  "id": "remove-nth-node-from-end-of-list",
+  "title": "Remove Nth Node From End of List",
+  "topic": "LinkedList",
+  "difficulty": "Medium",
+  "description": "Given the `head` of a linked list represented as an array and an integer `n`, remove the `n-th` node from the end of the list and return its head.",
+  "starterCode": "function solve(input) {\n  const { list, n } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "list": [1, 2, 3, 4, 5],
+        "n": 2
+      },
+      "expected": [1, 2, 3, 5]
+    },
+    {
+      "input": {
+        "list": [1],
+        "n": 1
+      },
+      "expected": []
+    },
+    {
+      "input": {
+        "list": [1, 2],
+        "n": 1
+      },
+      "expected": [1]
+    },
+    {
+      "input": {
+        "list": [1, 2],
+        "n": 2
+      },
+      "expected": [2]
+    },
+    {
+      "input": {
+        "list": [1, 2, 3],
+        "n": 3
+      },
+      "expected": [2, 3]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Use two pointers separated by n steps."
+    },
+    {
+      "level": 2,
+      "content": "Advance first pointer n steps ahead, then move both until first hits the end."
+    },
+    {
+      "level": 3,
+      "content": "Target index from start is list.length - n."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { list, n } = input;\n  const idx = list.length - n;\n  return [...list.slice(0, idx), ...list.slice(idx + 1)];\n}",
+    "explanation": "Two-pointer sliding window or index calculation to remove node at list.length - n.\nTime Complexity: O(n)\nSpace Complexity: O(n)"
+  }
+}

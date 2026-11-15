@@ -1,0 +1,58 @@
+{
+  "id": "maximum-depth-of-binary-tree",
+  "title": "Maximum Depth of Binary Tree",
+  "topic": "Trees",
+  "difficulty": "Easy",
+  "description": "Given a binary tree represented as an array in level-order (with `null` for missing nodes), return its maximum depth. A binary tree’s maximum depth is the number of nodes along the longest path from the root node down to the farthest leaf node. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.",
+  "starterCode": "function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "tree": [3, 9, 20, null, null, 15, 7]
+      },
+      "expected": 3
+    },
+    {
+      "input": {
+        "tree": [1, null, 2]
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "tree": []
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "tree": [0]
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "tree": [1, 2, 3, 4, 5]
+      },
+      "expected": 3
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Recursive depth: 1 + max(depth(left), depth(right))."
+    },
+    {
+      "level": 2,
+      "content": "For array representation, node at index i has children at 2*i + 1 and 2*i + 2."
+    },
+    {
+      "level": 3,
+      "content": "Recursive helper: function getDepth(i) { if (i >= tree.length || tree[i] === null) return 0; return 1 + Math.max(getDepth(2*i+1), getDepth(2*i+2)); }."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { tree } = input;\n  if (!tree || tree.length === 0 || tree[0] === null) return 0;\n  function depth(idx) {\n    if (idx >= tree.length || tree[idx] === null || tree[idx] === undefined) return 0;\n    return 1 + Math.max(depth(2 * idx + 1), depth(2 * idx + 2));\n  }\n  return depth(0);\n}",
+    "explanation": "Recursive DFS traversal checking child nodes at 2i + 1 and 2i + 2.\nTime Complexity: O(n)\nSpace Complexity: O(h) where h is tree height"
+  }
+}

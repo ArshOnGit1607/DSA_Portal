@@ -1,0 +1,58 @@
+{
+  "id": "valid-palindrome",
+  "title": "Valid Palindrome",
+  "topic": "Strings",
+  "difficulty": "Easy",
+  "description": "A phrase is a palindrome if, after converting all uppercase letters into lowercase letters and removing all non-alphanumeric characters, it reads the same forward and backward. Given a string `s`, return `true` if it is a palindrome, or `false` otherwise.",
+  "starterCode": "function solve(input) {\n  const { s } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "s": "A man, a plan, a canal: Panama"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "s": "race a car"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "s": " "
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "s": "0P"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "s": "No lemon, no melon"
+      },
+      "expected": true
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Clean the string by lowercasing and stripping non-alphanumerics."
+    },
+    {
+      "level": 2,
+      "content": "Use two pointers from both ends moving towards the center."
+    },
+    {
+      "level": 3,
+      "content": "Cleaned string s === cleaned.split(\"\").reverse().join(\"\") or two pointer while(l < r)."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { s } = input;\n  const cleaned = s.toLowerCase().replace(/[^a-z0-9]/g, \"\");\n  let l = 0, r = cleaned.length - 1;\n  while (l < r) {\n    if (cleaned[l] !== cleaned[r]) return false;\n    l++;\n    r--;\n  }\n  return true;\n}",
+    "explanation": "Clean string with regex, then verify with two pointers meeting in the center.\nTime Complexity: O(n)\nSpace Complexity: O(n)"
+  }
+}
