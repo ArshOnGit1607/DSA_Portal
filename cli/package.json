@@ -1,6 +1,6 @@
 {
   "name": "dsa-practice-cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Practise data structures and algorithms in your terminal: pick a topic and difficulty, solve in JavaScript, get instant test results, hints and solutions.",
   "keywords": [
     "dsa",

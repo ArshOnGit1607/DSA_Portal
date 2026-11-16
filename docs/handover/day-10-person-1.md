@@ -104,3 +104,40 @@ node cli/dist/index.js
 
 - Seed problems are duplicated in `core/problems/` (CR-030).
 - The CLI keeps one stats file per OS user, and its stats are separate from the web/desktop/mobile account stats.
+
+## Interactive CLI menus (2026-11-16)
+
+### What was built
+
+- **Keyboard-driven menus** in the CLI (`cli/src/ui.ts`, `select()`): ↑/↓ or j/k to move, Enter to select, 1-9 to jump, q/Esc to go back. Used for the main menu, topic, difficulty and the per-problem actions. The difficulty list only shows levels that exist for the chosen topic.
+- **Colour and layout**: solved-progress bar, difficulty in green/yellow/red, green/red test results. Off when `NO_COLOR` is set or output is not a terminal.
+- **Write the solution in your own editor**: opens `$VISUAL` / `$EDITOR` (default `vi`, `notepad` on Windows) on `~/.dsa-practice/drafts/<problem-id>.js`, pre-filled with the starter code. Save and quit to submit; an unchanged starter is not submitted. Paste-then-`END` is still available.
+- **Stay on the problem**: after a hint, the reference solution or a failed submission you return to the problem's action menu. Hints are revealed one level at a time.
+- **Scriptable fallback**: with piped stdin the menus are numbered prompts, read through one buffered line iterator (the old `rl.question` loop could drop piped lines).
+- Package version bumped to **1.1.0** (not published yet: `npm publish -w cli` when ready).
+
+### How to run
+
+```bash
+npm run build -w cli && npm run start -w cli
+npx jest cli            # stats + menu key handling
+```
+
+### For others
+
+No endpoint, table or WebSocket event changed. The CLI is still fully offline and its stats file format (`~/.dsa-practice/stats.json`) is unchanged.
+
+### Design decisions (for the viva)
+
+- **No prompt library.** The menu is about 60 lines on Node's `readline` keypress events, so the npm package stays one bundled file with nothing extra to audit.
+- **Key handling is a pure function** (`handleKey(index, count, key)`), so it is unit-tested without a terminal; the terminal drawing around it is thin.
+- **Inline menus, not full-screen.** Each menu redraws in place and collapses to one line once chosen, so the scrollback stays a readable transcript of the session.
+- **The user's editor instead of an embedded one.** Any embedded editor would be worse than vim/VS Code and far more code. `shell: true` lets values like `EDITOR="code -w"` work; the only interpolated path is the CLI's own drafts folder.
+- **Drafts live next to the stats file**, not in the shared temp folder, so other users on the machine cannot pre-create or read them.
+
+### Known issues
+
+- Menus with more than 9 rows can only be reached by arrows past row 9 (no menu is that long today: 8 topics).
+- A very long menu is not scrolled; it assumes the list fits in the terminal height.
+- After Esc there is a short delay (Node waits to see whether it is the start of an arrow-key sequence); `q` is instant.
+- On Windows the editor path was not tested (no Windows machine); paste mode is the fallback.
