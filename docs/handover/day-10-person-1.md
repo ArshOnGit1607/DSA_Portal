@@ -141,3 +141,35 @@ No endpoint, table or WebSocket event changed. The CLI is still fully offline an
 - A very long menu is not scrolled; it assumes the list fits in the terminal height.
 - After Esc there is a short delay (Node waits to see whether it is the start of an arrow-key sequence); `q` is instant.
 - On Windows the editor path was not tested (no Windows machine); paste mode is the fallback.
+
+## Full-screen CLI (2026-11-16)
+
+### What was built
+
+- The CLI now runs as a **full-screen terminal UI** (alternate screen, restored on quit). `select()` in `cli/src/ui.ts` draws every screen: block logo with the version, a bordered panel with right-aligned details per row, and a key-hint footer.
+- **Home screen**: topics with `solved/total` per topic and overall, plus "My stats". Choosing a topic goes straight to its difficulties.
+- **Search** (`/` on the home screen): filters all 41 problems by title, topic or difficulty as you type and opens the chosen one directly. Solved problems are ticked.
+- **Problem screen**: the statement, hints, test results or reference solution stay above the action menu. Text is word-wrapped to the terminal width and scrolls with d/u (or PgUp/PgDn) when it does not fit.
+- The version shown comes from `cli/package.json`, injected at build time by `cli/build.mjs`.
+
+### How to run it
+
+```bash
+npm run build -w cli && npm run start -w cli
+npx jest cli
+```
+
+### Design decisions (for the viva)
+
+- **One drawing function for every screen** instead of a screen per feature: a screen is "optional text + one panel of rows", so home, difficulty, problem and stats are all the same `select()` call with different data.
+- **Whole-frame redraw on each key** (cursor home, rewrite, clear the rest). At this size it is instant and there is no diffing code to get wrong; it also makes terminal resize a one-line handler.
+- **Still no TUI library** (blessed/ink): the layout is about 150 lines on `readline`, and the npm package stays one bundled file.
+- **Alternate screen is re-entered on every menu**, because an editor such as vim switches back to the normal screen when it quits.
+- **Piped input keeps the plain numbered prompts**, so the CLI is still scriptable and testable without a terminal.
+
+### Known issues
+
+- Number keys reach rows 1-9 only; the home screen has exactly 9 rows today.
+- Characters that are two columns wide (the ✅/❌ marks) are counted as one when wrapping, so a line containing them can wrap one column late.
+- On terminals shorter than about 20 rows the logo is replaced by a one-line title, and very small windows cut the panel.
+- A corrupt-stats warning is printed after you quit (the full-screen UI would wipe it at start-up).
