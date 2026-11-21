@@ -1,0 +1,58 @@
+{
+  "id": "product-of-array-except-self",
+  "title": "Product of Array Except Self",
+  "topic": "Arrays",
+  "difficulty": "Medium",
+  "description": "Given an integer array `nums`, return an array `answer` such that `answer[i]` is equal to the product of all the elements of `nums` except `nums[i]`. The product of any prefix or suffix of `nums` is guaranteed to fit in a 32-bit integer. You must write an algorithm that runs in O(n) time and without using the division operation.",
+  "starterCode": "function solve(input) {\n  const { nums } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [1, 2, 3, 4]
+      },
+      "expected": [24, 12, 8, 6]
+    },
+    {
+      "input": {
+        "nums": [-1, 1, 0, -3, 3]
+      },
+      "expected": [0, 0, 9, 0, 0]
+    },
+    {
+      "input": {
+        "nums": [2, 3]
+      },
+      "expected": [3, 2]
+    },
+    {
+      "input": {
+        "nums": [0, 0]
+      },
+      "expected": [0, 0]
+    },
+    {
+      "input": {
+        "nums": [5, 2, 0, 4]
+      },
+      "expected": [0, 0, 40, 0]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Can you precompute prefix products and suffix products?"
+    },
+    {
+      "level": 2,
+      "content": "Prefix product up to i gives product of all elements to the left."
+    },
+    {
+      "level": 3,
+      "content": "First pass computes left prefix products. Second pass iterates backwards accumulating right suffix products."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums } = input;\n  const n = nums.length;\n  const res = new Array(n).fill(1);\n  let left = 1;\n  for (let i = 0; i < n; i++) {\n    res[i] = left;\n    left *= nums[i];\n  }\n  let right = 1;\n  for (let i = n - 1; i >= 0; i--) {\n    res[i] *= right;\n    right *= nums[i];\n  }\n  return res;\n}",
+    "explanation": "Calculate prefix products from left to right, then multiply by running suffix products from right to left.\nTime Complexity: O(n)\nSpace Complexity: O(1) extra space excluding output array"
+  }
+}

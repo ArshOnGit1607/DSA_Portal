@@ -1,0 +1,58 @@
+{
+  "id": "binary-tree-level-order-traversal",
+  "title": "Binary Tree Level Order Traversal",
+  "topic": "Trees",
+  "difficulty": "Medium",
+  "description": "Given the `root` of a binary tree represented as an array in level-order, return the level order traversal of its nodes values. (i.e., from left to right, level by level). The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.",
+  "starterCode": "function solve(input) {\n  const { tree } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "tree": [3, 9, 20, null, null, 15, 7]
+      },
+      "expected": [[3], [9, 20], [15, 7]]
+    },
+    {
+      "input": {
+        "tree": [1]
+      },
+      "expected": [[1]]
+    },
+    {
+      "input": {
+        "tree": []
+      },
+      "expected": []
+    },
+    {
+      "input": {
+        "tree": [1, 2, 3, 4, 5]
+      },
+      "expected": [[1], [2, 3], [4, 5]]
+    },
+    {
+      "input": {
+        "tree": [1, null, 2, null, null, null, 3]
+      },
+      "expected": [[1], [2], [3]]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Use a Queue for Breadth-First Search (BFS)."
+    },
+    {
+      "level": 2,
+      "content": "At each level, record queue.length and process that many nodes."
+    },
+    {
+      "level": 3,
+      "content": "For array representation, track level index: level 0 has [0], level 1 has [1, 2], etc."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { tree } = input;\n  if (!tree || tree.length === 0 || tree[0] === null) return [];\n  const res = [];\n  function dfs(idx, level) {\n    if (idx >= tree.length || tree[idx] === null || tree[idx] === undefined) return;\n    if (!res[level]) res[level] = [];\n    res[level].push(tree[idx]);\n    dfs(2 * idx + 1, level + 1);\n    dfs(2 * idx + 2, level + 1);\n  }\n  dfs(0, 0);\n  return res;\n}",
+    "explanation": "BFS or DFS with level index. Group node values into subarrays by their depth.\nTime Complexity: O(n)\nSpace Complexity: O(n)"
+  }
+}

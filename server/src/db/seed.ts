@@ -1,4 +1,4 @@
-import { validateProblem, type Problem } from '@dsa-portal/core';
+import { validateProblem } from '@dsa-portal/core';
 import { pool, closePool } from './pool';
 import { PostgresProblemRepository } from './repositories/problem.repository';
 import { PostgresUserRepository } from './repositories/user.repository';
@@ -35,8 +35,7 @@ export async function seedDatabase(): Promise<{
 
   // 3. Seed Default Users
   console.log('[Seed] Seeding default users (admin, student)...');
-  const devPasswordHash =
-    '$2b$10$wO3P6P6E0.0eK3.yF8iUSeVqjYh4c9qK2M5A1hU6d2Y/F4kH6v6y.'; // bcrypt hash for password123
+  const devPasswordHash = '$2a$10$iBVruH6tb4eMv2wF.RPFT.XkkhjjPIQ/wpSU2mR.2VuHIDY8E1T2y'; // bcrypt hash for password123 (CR-012)
 
   await userRepo.save({
     id: '00000000-0000-0000-0000-000000000001',
@@ -53,6 +52,11 @@ export async function seedDatabase(): Promise<{
     role: 'user',
     passwordHash: devPasswordHash,
   });
+  // save() never overwrites a password on conflict, so reset the two dev accounts explicitly (CR-012).
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = ANY($2::uuid[])', [
+    devPasswordHash,
+    ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'],
+  ]);
 
   // 4. Set Today's Daily Challenge (idempotent upsert on CURRENT_DATE)
   console.log('[Seed] Setting today’s daily challenge...');
@@ -84,9 +88,24 @@ export async function seedDatabase(): Promise<{
   };
 }
 
-// Direct execution
+/**
+ * Seeds only a database with no problems yet (first start of a fresh deployment); null when it skipped.
+ * Hosts without a shell (Render free plan) run this on every start.
+ */
+export async function seedIfEmpty(): Promise<Awaited<ReturnType<typeof seedDatabase>> | null> {
+  const { rows } = await pool.query<{ has: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM problems) AS has'
+  );
+  if (rows[0].has) {
+    console.log('[Seed] Problems already present, skipping seed.');
+    return null;
+  }
+  return seedDatabase();
+}
+
+// Direct execution: `node seed.js` always seeds (idempotent upserts); `--if-empty` only on a fresh database.
 if (require.main === module) {
-  seedDatabase()
+  (process.argv.includes('--if-empty') ? seedIfEmpty() : seedDatabase())
     .then((result) => {
       console.log('Seed summary:', result);
       return closePool().then(() => process.exit(0));

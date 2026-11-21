@@ -50,7 +50,7 @@ export async function query<R extends QueryResultRow = any, I extends any[] = an
 ): Promise<QueryResult<R>> {
   const start = Date.now();
   try {
-    const res = await pool.query<R, I>(text, params);
+    const res = await pool.query<R>(text, params);
     const duration = Date.now() - start;
     if (process.env.NODE_ENV === 'development' && duration > 200) {
       console.warn(`[DB] Slow query (${duration}ms):`, text);
@@ -72,9 +72,7 @@ export async function getClient(): Promise<PoolClient> {
 /**
  * Helper to run a callback inside a transaction block
  */
-export async function withTransaction<T>(
-  callback: (client: PoolClient) => Promise<T>
-): Promise<T> {
+export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -111,4 +109,11 @@ export async function checkDbHealth(): Promise<{ ok: boolean; latencyMs: number;
  */
 export async function closePool(): Promise<void> {
   await pool.end();
+}
+
+export type PoolMetrics = ReturnType<typeof getPoolMetrics>;
+
+/** The shared pool, for services that take an injectable Pool (health checks). */
+export function getPool(): Pool {
+  return pool;
 }

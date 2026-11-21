@@ -1,0 +1,76 @@
+{
+  "id": "clone-graph",
+  "title": "Clone Graph",
+  "topic": "Graphs",
+  "difficulty": "Medium",
+  "description": "Given an adjacency list representing a connected undirected graph, return a deep copy (clone) of the graph representation.",
+  "starterCode": "function solve(input) {\n  const { adjList } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "adjList": [
+          [2, 4],
+          [1, 3],
+          [2, 4],
+          [1, 3]
+        ]
+      },
+      "expected": [
+        [2, 4],
+        [1, 3],
+        [2, 4],
+        [1, 3]
+      ]
+    },
+    {
+      "input": {
+        "adjList": [[]]
+      },
+      "expected": [[]]
+    },
+    {
+      "input": {
+        "adjList": []
+      },
+      "expected": []
+    },
+    {
+      "input": {
+        "adjList": [[2], [1]]
+      },
+      "expected": [[2], [1]]
+    },
+    {
+      "input": {
+        "adjList": [
+          [2, 3],
+          [1, 3],
+          [1, 2]
+        ]
+      },
+      "expected": [
+        [2, 3],
+        [1, 3],
+        [1, 2]
+      ]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Use a hash map to map original nodes to their cloned copies."
+    },
+    {
+      "level": 2,
+      "content": "DFS or BFS traversing every edge."
+    },
+    {
+      "level": 3,
+      "content": "Deep copying an adjacency list creates an independent replica of all neighbor arrays."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { adjList } = input;\n  if (!adjList || adjList.length === 0) return [];\n  return adjList.map(neighbors => [...neighbors]);\n}",
+    "explanation": "Deep clone of graph adjacency list. Creates distinct array references for all node neighbor lists.\nTime Complexity: O(V + E)\nSpace Complexity: O(V + E)"
+  }
+}

@@ -143,6 +143,15 @@ export class PostgresProblemRepository implements ProblemRepository {
     return Promise.all(probRes.rows.map((row) => this.findById(row.id))) as Promise<Problem[]>;
   }
 
+  /** Soft delete: unpublish, so submissions and stats keep pointing at a real row (CR-015). */
+  async delete(idOrSlug: string): Promise<boolean> {
+    const res = await pool.query(
+      'UPDATE problems SET is_published = false, updated_at = now() WHERE (slug = $1 OR id::text = $1) AND is_published',
+      [idOrSlug]
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async save(problem: Problem): Promise<void> {
     const runInTx = async (client: PoolClient) => {
       // 1. Upsert problem by slug

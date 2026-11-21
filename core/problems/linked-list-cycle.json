@@ -1,0 +1,63 @@
+{
+  "id": "linked-list-cycle",
+  "title": "Linked List Cycle Detection",
+  "topic": "LinkedList",
+  "difficulty": "Easy",
+  "description": "Given an array `nodes` representing node values and `pos` representing the index that the tail connects to (-1 if no cycle), determine if the linked list has a cycle in it.",
+  "starterCode": "function solve(input) {\n  const { nodes, pos } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nodes": [3, 2, 0, -4],
+        "pos": 1
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "nodes": [1, 2],
+        "pos": 0
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "nodes": [1],
+        "pos": -1
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "nodes": [],
+        "pos": -1
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "nodes": [1, 2, 3, 4, 5],
+        "pos": -1
+      },
+      "expected": false
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Floyd’s Cycle-Finding Algorithm (Tortoise and Hare)."
+    },
+    {
+      "level": 2,
+      "content": "If pos is -1, there is no cycle. If pos >= 0 and within bounds, a cycle exists."
+    },
+    {
+      "level": 3,
+      "content": "Fast pointer moves 2 steps, slow pointer moves 1 step. If they meet, a cycle exists."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nodes, pos } = input;\n  return pos >= 0 && pos < nodes.length;\n}",
+    "explanation": "Under pointer nodes, Floyds cycle detection uses fast and slow pointers. With pos representation, pos >= 0 indicates a loop.\nTime Complexity: O(1)\nSpace Complexity: O(1)"
+  }
+}

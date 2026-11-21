@@ -1,0 +1,73 @@
+{
+  "id": "course-schedule",
+  "title": "Course Schedule",
+  "topic": "Graphs",
+  "difficulty": "Medium",
+  "description": "There are a total of `numCourses` courses you have to take, labeled from 0 to `numCourses - 1`. You are given an array `prerequisites` where `prerequisites[i] = [a, b]` indicates you must take course `b` first if you want to take course `a`. Return `true` if you can finish all courses, or `false` otherwise.",
+  "starterCode": "function solve(input) {\n  const { numCourses, prerequisites } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "numCourses": 2,
+        "prerequisites": [[1, 0]]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "numCourses": 2,
+        "prerequisites": [
+          [1, 0],
+          [0, 1]
+        ]
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "numCourses": 1,
+        "prerequisites": []
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "numCourses": 3,
+        "prerequisites": [
+          [0, 1],
+          [1, 2]
+        ]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "numCourses": 3,
+        "prerequisites": [
+          [0, 1],
+          [1, 2],
+          [2, 0]
+        ]
+      },
+      "expected": false
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "This problem is equivalent to detecting a cycle in a directed graph."
+    },
+    {
+      "level": 2,
+      "content": "Kahn’s algorithm using indegree array or 3-color DFS cycle detection."
+    },
+    {
+      "level": 3,
+      "content": "Maintain in-degree for each course. Enqueue courses with in-degree 0. If processed count === numCourses, return true."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { numCourses, prerequisites } = input;\n  const inDegree = new Array(numCourses).fill(0);\n  const adj = Array.from({ length: numCourses }, () => []);\n  for (const [dest, src] of prerequisites) {\n    adj[src].push(dest);\n    inDegree[dest]++;\n  }\n  const q = [];\n  for (let i = 0; i < numCourses; i++) {\n    if (inDegree[i] === 0) q.push(i);\n  }\n  let count = 0;\n  while (q.length > 0) {\n    const node = q.shift();\n    count++;\n    for (const neighbor of adj[node]) {\n      inDegree[neighbor]--;\n      if (inDegree[neighbor] === 0) q.push(neighbor);\n    }\n  }\n  return count === numCourses;\n}",
+    "explanation": "Kahns Topological Sort algorithm. A graph has no cycles iff all nodes can be processed with in-degree 0.\nTime Complexity: O(V + E)\nSpace Complexity: O(V + E)"
+  }
+}

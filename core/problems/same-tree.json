@@ -1,0 +1,63 @@
+{
+  "id": "same-tree",
+  "title": "Same Tree",
+  "topic": "Trees",
+  "difficulty": "Easy",
+  "description": "Given the roots of two binary trees `p` and `q` represented as level-order arrays, write a function to check if they are the same or not. The array is in heap order: the children of the node at index `i` are at indexes `2i + 1` and `2i + 2`, and `null` means no node there.",
+  "starterCode": "function solve(input) {\n  const { p, q } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "p": [1, 2, 3],
+        "q": [1, 2, 3]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "p": [1, 2],
+        "q": [1, null, 2]
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "p": [1, 2, 1],
+        "q": [1, 1, 2]
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "p": [],
+        "q": []
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "p": [10],
+        "q": [10]
+      },
+      "expected": true
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Two trees are identical if their root values match and their left/right subtrees match."
+    },
+    {
+      "level": 2,
+      "content": "Check base cases: both null = true, one null = false."
+    },
+    {
+      "level": 3,
+      "content": "Compare element-by-element in level order array."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { p, q } = input;\n  if (p.length !== q.length) return false;\n  for (let i = 0; i < p.length; i++) {\n    if (p[i] !== q[i]) return false;\n  }\n  return true;\n}",
+    "explanation": "Compare trees node by node. If values and structure match everywhere, they are identical.\nTime Complexity: O(n)\nSpace Complexity: O(1)"
+  }
+}

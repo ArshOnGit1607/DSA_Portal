@@ -1,0 +1,68 @@
+{
+  "id": "word-ladder",
+  "title": "Word Ladder",
+  "topic": "Graphs",
+  "difficulty": "Hard",
+  "description": "A transformation sequence from word `beginWord` to word `endWord` using a dictionary `wordList` is a sequence of words `beginWord -> s1 -> s2 -> ... -> sk` such that every adjacent pair differs by exactly one letter. Return the number of words in the shortest transformation sequence, or `0` if no such sequence exists.",
+  "starterCode": "function solve(input) {\n  const { beginWord, endWord, wordList } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "beginWord": "hit",
+        "endWord": "cog",
+        "wordList": ["hot", "dot", "dog", "lot", "log", "cog"]
+      },
+      "expected": 5
+    },
+    {
+      "input": {
+        "beginWord": "hit",
+        "endWord": "cog",
+        "wordList": ["hot", "dot", "dog", "lot", "log"]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "beginWord": "a",
+        "endWord": "c",
+        "wordList": ["a", "b", "c"]
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "beginWord": "hot",
+        "endWord": "dog",
+        "wordList": ["hot", "dog"]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "beginWord": "cold",
+        "endWord": "warm",
+        "wordList": ["cold", "cord", "card", "ward", "warm"]
+      },
+      "expected": 5
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Shortest path in an unweighted graph is solved using BFS."
+    },
+    {
+      "level": 2,
+      "content": "Treat each word as a node. Edges exist between words differing by 1 char."
+    },
+    {
+      "level": 3,
+      "content": "At each BFS step, mutate each letter from \"a\" to \"z\" and look up in a Set."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { beginWord, endWord, wordList } = input;\n  const wordSet = new Set(wordList);\n  if (!wordSet.has(endWord)) return 0;\n  let queue = [[beginWord, 1]];\n  const visited = new Set([beginWord]);\n  while (queue.length > 0) {\n    const [word, level] = queue.shift();\n    if (word === endWord) return level;\n    for (let i = 0; i < word.length; i++) {\n      for (let c = 97; c <= 122; c++) {\n        const char = String.fromCharCode(c);\n        const nextWord = word.slice(0, i) + char + word.slice(i + 1);\n        if (wordSet.has(nextWord) && !visited.has(nextWord)) {\n          visited.add(nextWord);\n          queue.push([nextWord, level + 1]);\n        }\n      }\n    }\n  }\n  return 0;\n}",
+    "explanation": "Breadth-First Search (BFS) explores words layer by layer, guaranteeing the shortest sequence.\nTime Complexity: O(M^2 * N) where M is word length and N is word list size\nSpace Complexity: O(M * N)"
+  }
+}

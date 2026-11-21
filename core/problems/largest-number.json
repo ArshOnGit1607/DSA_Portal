@@ -1,0 +1,58 @@
+{
+  "id": "largest-number",
+  "title": "Largest Number",
+  "topic": "Sorting",
+  "difficulty": "Medium",
+  "description": "Given a list of non-negative integers `nums`, arrange them such that they form the largest number and return it as a string.",
+  "starterCode": "function solve(input) {\n  const { nums } = input;\n  // Your solution here\n  return \"\";\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [10, 2]
+      },
+      "expected": "210"
+    },
+    {
+      "input": {
+        "nums": [3, 30, 34, 5, 9]
+      },
+      "expected": "9534330"
+    },
+    {
+      "input": {
+        "nums": [0, 0]
+      },
+      "expected": "0"
+    },
+    {
+      "input": {
+        "nums": [1]
+      },
+      "expected": "1"
+    },
+    {
+      "input": {
+        "nums": [8308, 830]
+      },
+      "expected": "8308830"
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Convert integers to strings."
+    },
+    {
+      "level": 2,
+      "content": "Custom sort comparator: compare string concatenations (b + a) vs (a + b)."
+    },
+    {
+      "level": 3,
+      "content": "Edge case: if the highest number is \"0\", return \"0\"."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums } = input;\n  const strs = nums.map(String);\n  strs.sort((a, b) => (b + a).localeCompare(a + b));\n  if (strs[0] === \"0\") return \"0\";\n  return strs.join(\"\");\n}",
+    "explanation": "Custom comparator sorting (b + a) against (a + b) greedily orders numbers to form the maximum combination.\nTime Complexity: O(n log n)\nSpace Complexity: O(n)"
+  }
+}

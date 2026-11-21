@@ -1,0 +1,63 @@
+{
+  "id": "top-k-frequent-elements",
+  "title": "Top K Frequent Elements",
+  "topic": "Sorting",
+  "difficulty": "Medium",
+  "description": "Given an integer array `nums` and an integer `k`, return the `k` most frequent elements in descending order of frequency.",
+  "starterCode": "function solve(input) {\n  const { nums, k } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [1, 1, 1, 2, 2, 3],
+        "k": 2
+      },
+      "expected": [1, 2]
+    },
+    {
+      "input": {
+        "nums": [1],
+        "k": 1
+      },
+      "expected": [1]
+    },
+    {
+      "input": {
+        "nums": [4, 4, 4, 6, 6, 7],
+        "k": 1
+      },
+      "expected": [4]
+    },
+    {
+      "input": {
+        "nums": [1, 2, 3, 4],
+        "k": 2
+      },
+      "expected": [1, 2]
+    },
+    {
+      "input": {
+        "nums": [-1, -1, 2, 2, 2],
+        "k": 2
+      },
+      "expected": [2, -1]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Count element frequencies using a Hash Map."
+    },
+    {
+      "level": 2,
+      "content": "Sort the distinct elements by frequency."
+    },
+    {
+      "level": 3,
+      "content": "Alternatively, Bucket Sort achieves O(n) time by indexing frequency arrays."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums, k } = input;\n  const count = new Map();\n  for (const n of nums) count.set(n, (count.get(n) || 0) + 1);\n  const sorted = [...count.entries()].sort((a, b) => b[1] - a[1]);\n  return sorted.slice(0, k).map(e => e[0]);\n}",
+    "explanation": "Frequency map sorted descending by frequency, taking top k elements.\nTime Complexity: O(n log n)\nSpace Complexity: O(n)"
+  }
+}

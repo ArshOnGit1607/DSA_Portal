@@ -6,6 +6,10 @@ info:
     Source of truth for /api/v1. JSON over HTTP, JWT Bearer auth.
     Never change an agreed endpoint, table column, or WebSocket event directly —
     propose changes in /docs/CHANGE_REQUESTS.md.
+
+    **Limits (Day 8, CR-023).** Every route may answer `429 RATE_LIMITED` with a `Retry-After`
+    header (requests per minute per IP, and per signed-in user). Bodies over 512 KiB get
+    `413 PAYLOAD_TOO_LARGE`. Both use the standard `Error` body. See /docs/threat-model.md.
 servers:
   - url: http://localhost:3000
     description: Local dev
@@ -32,10 +36,10 @@ components:
       properties:
         error:
           type: string
-          example: "VALIDATION_ERROR"
+          example: 'VALIDATION_ERROR'
         message:
           type: string
-          example: "difficulty must be one of Easy, Medium, Hard"
+          example: 'difficulty must be one of Easy, Medium, Hard'
         statusCode:
           type: integer
           example: 400
@@ -44,7 +48,7 @@ components:
           format: date-time
         path:
           type: string
-          example: "/api/v1/problems"
+          example: '/api/v1/problems'
 
     # ---- Keyset cursor pagination ----
     # Clients paginate by passing the cursor (last seen sort value + id)
@@ -243,6 +247,18 @@ components:
           format: date-time
           nullable: true
 
+    DifficultyStat:
+      type: object
+      required: [difficulty, attempted, solved]
+      properties:
+        difficulty:
+          type: string
+          enum: [Easy, Medium, Hard]
+        attempted:
+          type: integer
+        solved:
+          type: integer
+
     # ---- Leaderboard ----
     LeaderboardEntry:
       type: object
@@ -274,31 +290,144 @@ components:
           $ref: '#/components/schemas/Problem'
 
     # ---- Sync ----
+    SyncOperation:
+      type: object
+      description: One client mutation. The server takes the user from the token, not from userId.
+      required:
+        [opId, deviceId, entity, operationType, payload, clientTimestamp, hlc, schemaVersion]
+      properties:
+        serverSeq:
+          type: integer
+          description: Set by the server (pull only); the pull cursor.
+        opId:
+          type: string
+          format: uuid
+          description: Client-generated; makes push idempotent.
+        deviceId:
+          type: string
+        userId:
+          type: string
+        entity:
+          type: string
+          enum: [submission, attempt, user_stats, settings, tombstone, problem]
+        operationType:
+          type: string
+          enum: [INSERT, UPDATE, DELETE, UPSERT]
+        payload:
+          type: object
+        clientTimestamp:
+          type: string
+          format: date-time
+        hlc:
+          type: string
+          description: Hybrid logical clock "<ms>.<counter>.<deviceId>"; last-write-wins for settings.
+        schemaVersion:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
     SyncPush:
       type: object
-      required: [problemsAttempted, submissions]
+      required: [deviceId, clientVersion, schemaVersion, operations]
       properties:
-        problemsAttempted:
+        deviceId:
+          type: string
+        clientVersion:
+          type: string
+        schemaVersion:
+          type: integer
+        operations:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+
+    SyncPushResult:
+      type: object
+      required: [success, acknowledgedOpIds, duplicateOpIds, serverSeqWatermark, serverTimestamp]
+      properties:
+        success:
+          type: boolean
+        acknowledgedOpIds:
           type: array
           items:
             type: string
-        submissions:
+        duplicateOpIds:
           type: array
+          description: Already applied earlier (safe retry); also listed in acknowledgedOpIds.
           items:
-            type: object
+            type: string
+        serverSeqWatermark:
+          type: integer
+        serverTimestamp:
+          type: string
+          format: date-time
 
     SyncPull:
       type: object
-      required: [problems, submissions]
+      required: [cursor, hasMore, operations]
       properties:
+        cursor:
+          type: integer
+          description: Pass it back as ?cursor= for the next page.
+        hasMore:
+          type: boolean
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+
+    SyncBootstrap:
+      type: object
+      required: [watermarkSeq, problems, userSubmissions, userStats, userSettings, generatedAt]
+      properties:
+        watermarkSeq:
+          type: integer
+          description: Start pulling from this cursor after applying the snapshot.
         problems:
           type: array
           items:
-            $ref: '#/components/schemas/ProblemSummary'
-        submissions:
+            type: object
+        userSubmissions:
           type: array
           items:
-            $ref: '#/components/schemas/Submission'
+            type: object
+        userStats:
+          type: array
+          items:
+            type: object
+        userSettings:
+          type: object
+        generatedAt:
+          type: string
+          format: date-time
+
+    # ---- Dead-letter list entry (Day 6) ----
+    FailedJob:
+      type: object
+      required: [id, problemId, userId, attempts, lastError, createdAt, failedAt]
+      properties:
+        id:
+          type: string
+        problemId:
+          type: string
+        userId:
+          type: string
+        attempts:
+          type: integer
+          description: Claims used, crashed or stalled runs included
+        lastError:
+          type: string
+          nullable: true
+          description: Why the last attempt failed
+        createdAt:
+          type: string
+          format: date-time
+        failedAt:
+          type: string
+          format: date-time
+          nullable: true
 
   ###############################################################################
   # Security schemes
@@ -340,7 +469,6 @@ components:
 # Paths
 ###############################################################################
 paths:
-
   # ===========================================================================
   # Auth
   # ===========================================================================
@@ -411,6 +539,16 @@ paths:
                 $ref: '#/components/schemas/TokenPair'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Too many failed logins from this IP or for this account; retry after Retry-After seconds
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/auth/refresh:
     post:
@@ -661,7 +799,7 @@ paths:
     post:
       tags: [submissions]
       operationId: submissionsCreate
-      summary: Submit code for judging (enqueues to BullMQ worker)
+      summary: Submit code for judging (enqueued for a worker process)
       security:
         - bearerAuth: []
       requestBody:
@@ -690,6 +828,32 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Idempotency-Key reused with a different body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Body larger than 512 KiB (PAYLOAD_TOO_LARGE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: |
+            Retry after the Retry-After header's seconds. `error` says why:
+            `QUOTA_EXCEEDED` (this user's submissions per minute or per day),
+            `QUEUE_FULL` (backpressure) or `RATE_LIMITED` (requests per IP or user).
+            An idempotent replay is answered before any of these checks.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
     get:
       tags: [submissions]
@@ -774,6 +938,7 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/StatSummary'
                   - type: object
+                    required: [streak, topics, difficulties]
                     properties:
                       streak:
                         $ref: '#/components/schemas/StreakStat'
@@ -781,6 +946,10 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/TopicStat'
+                      difficulties:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DifficultyStat'
 
   /api/v1/stats/me/topics:
     get:
@@ -803,6 +972,33 @@ paths:
                     items:
                       $ref: '#/components/schemas/TopicStat'
 
+  /api/v1/stats/me/streak:
+    get:
+      tags: [stats]
+      operationId: statsMeStreak
+      summary: Current user's streak plus the days it is built from (streak calendar)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Streak and solve days
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/StreakStat'
+                  - type: object
+                    required: [days]
+                    properties:
+                      days:
+                        type: array
+                        description: UTC dates (YYYY-MM-DD), ascending, on which the user first solved a problem
+                        items:
+                          type: string
+                          format: date
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   # ===========================================================================
   # Leaderboard
   # ===========================================================================
@@ -810,9 +1006,18 @@ paths:
     get:
       tags: [leaderboard]
       operationId: leaderboardList
-      summary: Global leaderboard sorted by solved count then score
+      summary: Leaderboard - most problems solved, ties broken by who reached that count first
+      description: >
+        `totalScore` is Easy 1, Medium 2, Hard 3 per solved problem (shown, not used for ranking).
+        `period=week` counts only problems first solved in the last 7 days.
       security: []
       parameters:
+        - in: query
+          name: period
+          schema:
+            type: string
+            enum: [week, all]
+            default: all
         - in: query
           name: cursor
           schema:
@@ -840,6 +1045,8 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/LeaderboardEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   # ===========================================================================
   # Daily challenge
@@ -848,7 +1055,7 @@ paths:
     get:
       tags: [daily]
       operationId: dailyGet
-      summary: Get today's daily challenge problem
+      summary: Get today's daily challenge problem (UTC day; the same problem for everyone)
       security:
         - bearerAuth: []
       responses:
@@ -858,6 +1065,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DailyChallenge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -877,7 +1086,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: [title, topic, difficulty, description, starterCode, testCases, hints, solution]
+              required:
+                [title, topic, difficulty, description, starterCode, testCases, hints, solution]
               properties:
                 title:
                   type: string
@@ -1042,6 +1252,88 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/v1/admin/queue/failed:
+    get:
+      tags: [admin]
+      operationId: adminListFailedSubmissions
+      summary: Dead-letter list - submissions that failed every retry (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Failed submissions, newest failure first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FailedJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/queue/failed/{id}/requeue:
+    post:
+      tags: [admin]
+      operationId: adminRequeueFailedSubmission
+      summary: Put a failed submission back on the queue with a fresh retry budget (admin only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submissionId, status]
+                properties:
+                  submissionId:
+                    type: string
+                  status:
+                    type: string
+                    example: queued
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ===========================================================================
   # Sync (offline-first push/pull)
   # ===========================================================================
@@ -1049,7 +1341,7 @@ paths:
     post:
       tags: [sync]
       operationId: syncPush
-      summary: Push local (SQLite/CLI) attempts and submissions to server
+      summary: Push a batch of offline client operations (idempotent by opId, max 100)
       security:
         - bearerAuth: []
       requestBody:
@@ -1060,19 +1352,11 @@ paths:
               $ref: '#/components/schemas/SyncPush'
       responses:
         '200':
-          description: Push accepted
+          description: Operations applied (or already applied)
           content:
             application/json:
               schema:
-                type: object
-                required: [accepted, conflicts]
-                properties:
-                  accepted:
-                    type: integer
-                  conflicts:
-                    type: array
-                    items:
-                      type: object
+                $ref: '#/components/schemas/SyncPushResult'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1082,22 +1366,52 @@ paths:
     get:
       tags: [sync]
       operationId: syncPull
-      summary: Pull server-side problems and submissions to local client
+      summary: Pull this user's operations after a server_seq cursor
       security:
         - bearerAuth: []
       parameters:
-        - name: since
+        - name: cursor
           in: query
           schema:
-            type: string
-            format: date-time
-            description: Only return records changed after this timestamp
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
       responses:
         '200':
-          description: Data to sync down
+          description: One page of operations
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncPull'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '410':
+          description: SYNC_CURSOR_EXPIRED, the cursor is older than the 90-day tombstone window; call /sync/bootstrap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/sync/bootstrap:
+    get:
+      tags: [sync]
+      operationId: syncBootstrap
+      summary: Full snapshot for a new device or after SYNC_CURSOR_EXPIRED
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncBootstrap'
         '401':
           $ref: '#/components/responses/Unauthorized'

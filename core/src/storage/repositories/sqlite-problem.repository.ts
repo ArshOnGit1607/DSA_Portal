@@ -111,6 +111,17 @@ export class SqliteProblemRepository implements ProblemRepository {
     return Promise.all(rows.map((r) => this.findById(r.slug))) as Promise<Problem[]>;
   }
 
+  /** Soft delete (CR-015), same semantics as the PostgreSQL repository. */
+  async delete(idOrSlug: string): Promise<boolean> {
+    const row = await this.adapter.queryOne<{ id: string }>(
+      'SELECT id FROM problems WHERE (slug = ? OR id = ?) AND is_published = 1 LIMIT 1',
+      [idOrSlug, idOrSlug]
+    );
+    if (!row) return false;
+    await this.adapter.execute('UPDATE problems SET is_published = 0 WHERE id = ?', [row.id]);
+    return true;
+  }
+
   async save(problem: Problem): Promise<void> {
     await this.adapter.transaction(async (tx) => {
       // 1. Check if problem already exists

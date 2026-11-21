@@ -1,0 +1,99 @@
+{
+  "id": "flood-fill",
+  "title": "Flood Fill",
+  "topic": "Graphs",
+  "difficulty": "Easy",
+  "description": "An image is represented by an `m x n` integer grid `image` where `image[i][j]` represents the pixel value. You are given `sr`, `sc`, and `color`. Perform a flood fill on the image starting from `(sr, sc)` replacing the starting pixel and all 4-directionally connected pixels of the same color with `color`.",
+  "starterCode": "function solve(input) {\n  const { image, sr, sc, color } = input;\n  // Your solution here\n  return [];\n}",
+  "testCases": [
+    {
+      "input": {
+        "image": [
+          [1, 1, 1],
+          [1, 1, 0],
+          [1, 0, 1]
+        ],
+        "sr": 1,
+        "sc": 1,
+        "color": 2
+      },
+      "expected": [
+        [2, 2, 2],
+        [2, 2, 0],
+        [2, 0, 1]
+      ]
+    },
+    {
+      "input": {
+        "image": [
+          [0, 0, 0],
+          [0, 0, 0]
+        ],
+        "sr": 0,
+        "sc": 0,
+        "color": 0
+      },
+      "expected": [
+        [0, 0, 0],
+        [0, 0, 0]
+      ]
+    },
+    {
+      "input": {
+        "image": [[0]],
+        "sr": 0,
+        "sc": 0,
+        "color": 1
+      },
+      "expected": [[1]]
+    },
+    {
+      "input": {
+        "image": [
+          [1, 2],
+          [3, 4]
+        ],
+        "sr": 1,
+        "sc": 1,
+        "color": 5
+      },
+      "expected": [
+        [1, 2],
+        [3, 5]
+      ]
+    },
+    {
+      "input": {
+        "image": [
+          [2, 2],
+          [2, 2]
+        ],
+        "sr": 0,
+        "sc": 1,
+        "color": 9
+      },
+      "expected": [
+        [9, 9],
+        [9, 9]
+      ]
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Check if the target pixel already has the new color (avoid infinite loop)."
+    },
+    {
+      "level": 2,
+      "content": "Store originalColor = image[sr][sc]."
+    },
+    {
+      "level": 3,
+      "content": "DFS to all 4 neighbors matching originalColor, setting them to color."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { image, sr, sc, color } = input;\n  const orig = image[sr][sc];\n  if (orig === color) return image;\n  const m = image.length, n = image[0].length;\n  function dfs(r, c) {\n    if (r < 0 || c < 0 || r >= m || c >= n || image[r][c] !== orig) return;\n    image[r][c] = color;\n    dfs(r + 1, c);\n    dfs(r - 1, c);\n    dfs(r, c + 1);\n    dfs(r, c - 1);\n  }\n  dfs(sr, sc);\n  return image;\n}",
+    "explanation": "Standard flood fill via DFS traversal. Replaces original color with target color on adjacent cells.\nTime Complexity: O(m * n)\nSpace Complexity: O(m * n)"
+  }
+}

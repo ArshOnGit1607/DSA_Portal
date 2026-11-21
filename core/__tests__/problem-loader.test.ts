@@ -41,7 +41,7 @@ describe('problem-loader', () => {
     expect(arrays.every((p) => p.topic === 'Arrays')).toBe(true);
     const easy = filterProblems(problems, { difficulty: 'Easy' });
     expect(easy.every((p) => p.difficulty === 'Easy')).toBe(true);
-    const filtered = filterProblems(problems, { topic: 'Graphs', difficulty: 'Hard' });
+    const filtered = filterProblems(problems, { topic: 'Sorting', difficulty: 'Hard' });
     expect(filtered.length).toBe(0);
   });
 });

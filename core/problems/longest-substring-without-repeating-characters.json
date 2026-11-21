@@ -1,0 +1,58 @@
+{
+  "id": "longest-substring-without-repeating-characters",
+  "title": "Longest Substring Without Repeating Characters",
+  "topic": "Strings",
+  "difficulty": "Medium",
+  "description": "Given a string `s`, find the length of the longest substring without repeating characters.",
+  "starterCode": "function solve(input) {\n  const { s } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "s": "abcabcbb"
+      },
+      "expected": 3
+    },
+    {
+      "input": {
+        "s": "bbbbb"
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "s": "pwwkew"
+      },
+      "expected": 3
+    },
+    {
+      "input": {
+        "s": ""
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "s": "au"
+      },
+      "expected": 2
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Use a sliding window defined by two pointers [left, right]."
+    },
+    {
+      "level": 2,
+      "content": "Track the last seen index of each character in a map."
+    },
+    {
+      "level": 3,
+      "content": "When a repeated character is encountered, jump the left pointer to lastSeen + 1."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { s } = input;\n  const seen = new Map();\n  let maxLen = 0, left = 0;\n  for (let right = 0; right < s.length; right++) {\n    const char = s[right];\n    if (seen.has(char) && seen.get(char) >= left) {\n      left = seen.get(char) + 1;\n    }\n    seen.set(char, right);\n    maxLen = Math.max(maxLen, right - left + 1);\n  }\n  return maxLen;\n}",
+    "explanation": "Sliding window with character index map. When duplicate is seen, slide left pointer past its last occurrence.\nTime Complexity: O(n)\nSpace Complexity: O(min(m, n)) where m is character set size"
+  }
+}

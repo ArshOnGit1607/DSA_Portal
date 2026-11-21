@@ -1,0 +1,58 @@
+{
+  "id": "house-robber",
+  "title": "House Robber",
+  "topic": "Dynamic Programming",
+  "difficulty": "Medium",
+  "description": "You are a professional robber planning to rob houses along a street. Each house has a certain amount of money stashed. Adjacent houses have security systems connected that automatically contact the police if two adjacent houses were broken into on the same night. Return the maximum amount of money you can rob tonight without alerting the police.",
+  "starterCode": "function solve(input) {\n  const { nums } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [1, 2, 3, 1]
+      },
+      "expected": 4
+    },
+    {
+      "input": {
+        "nums": [2, 7, 9, 3, 1]
+      },
+      "expected": 12
+    },
+    {
+      "input": {
+        "nums": [0]
+      },
+      "expected": 0
+    },
+    {
+      "input": {
+        "nums": [2, 1, 1, 2]
+      },
+      "expected": 4
+    },
+    {
+      "input": {
+        "nums": [5]
+      },
+      "expected": 5
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "At each house i, you either rob it (nums[i] + rob(i-2)) or skip it (rob(i-1))."
+    },
+    {
+      "level": 2,
+      "content": "dp[i] = max(dp[i-1], dp[i-2] + nums[i])."
+    },
+    {
+      "level": 3,
+      "content": "Only two previous values are required, giving O(1) space."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums } = input;\n  if (nums.length === 0) return 0;\n  if (nums.length === 1) return nums[0];\n  let prev2 = 0, prev1 = 0;\n  for (const n of nums) {\n    const temp = Math.max(prev1, prev2 + n);\n    prev2 = prev1;\n    prev1 = temp;\n  }\n  return prev1;\n}",
+    "explanation": "State transition dp[i] = max(dp[i-1], dp[i-2] + nums[i]) maintained with two rolling variables.\nTime Complexity: O(n)\nSpace Complexity: O(1)"
+  }
+}

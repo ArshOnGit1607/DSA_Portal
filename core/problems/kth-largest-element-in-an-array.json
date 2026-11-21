@@ -1,0 +1,63 @@
+{
+  "id": "kth-largest-element-in-an-array",
+  "title": "Kth Largest Element in an Array",
+  "topic": "Sorting",
+  "difficulty": "Medium",
+  "description": "Given an integer array `nums` and an integer `k`, return the `k-th` largest element in the array. Can you solve it without sorting the entire array?",
+  "starterCode": "function solve(input) {\n  const { nums, k } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [3, 2, 1, 5, 6, 4],
+        "k": 2
+      },
+      "expected": 5
+    },
+    {
+      "input": {
+        "nums": [3, 2, 3, 1, 2, 4, 5, 5, 6],
+        "k": 4
+      },
+      "expected": 4
+    },
+    {
+      "input": {
+        "nums": [1],
+        "k": 1
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "nums": [-1, 2, 0],
+        "k": 1
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "nums": [7, 6, 5, 4, 3, 2, 1],
+        "k": 5
+      },
+      "expected": 3
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Sorting the array in descending order yields nums[k-1]."
+    },
+    {
+      "level": 2,
+      "content": "A min-heap of size k keeps the top k elements in O(n log k)."
+    },
+    {
+      "level": 3,
+      "content": "Quickselect finds the kth element in average O(n) time."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums, k } = input;\n  nums.sort((a, b) => b - a);\n  return nums[k - 1];\n}",
+    "explanation": "Sort descending and return element at index k - 1.\nTime Complexity: O(n log n)\nSpace Complexity: O(1)"
+  }
+}

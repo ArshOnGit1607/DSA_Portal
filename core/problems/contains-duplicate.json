@@ -1,0 +1,58 @@
+{
+  "id": "contains-duplicate",
+  "title": "Contains Duplicate",
+  "topic": "Arrays",
+  "difficulty": "Easy",
+  "description": "Given an integer array `nums`, return `true` if any value appears at least twice in the array, and return `false` if every element is distinct.",
+  "starterCode": "function solve(input) {\n  const { nums } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "nums": [1, 2, 3, 1]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "nums": [1, 2, 3, 4]
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "nums": [1, 1, 1, 3, 3, 4, 3, 2, 4, 2]
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "nums": []
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "nums": [-100, -100]
+      },
+      "expected": true
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "A set stores only unique values."
+    },
+    {
+      "level": 2,
+      "content": "Compare the size of the set with the length of the array, or check set.has() during iteration."
+    },
+    {
+      "level": 3,
+      "content": "new Set(nums).size !== nums.length provides a clean one-liner."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { nums } = input;\n  return new Set(nums).size !== nums.length;\n}",
+    "explanation": "A Set removes duplicates. If the set size is smaller than the array length, duplicates exist.\nTime Complexity: O(n)\nSpace Complexity: O(n)"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "id": "search-a-2d-matrix",
+  "title": "Search a 2D Matrix",
+  "topic": "Searching",
+  "difficulty": "Medium",
+  "description": "You are given an `m x n` integer matrix `matrix` with the properties: integers in each row are sorted from left to right, and the first integer of each row is greater than the last integer of the previous row. Given an integer `target`, return `true` if `target` is in `matrix` or `false` otherwise.",
+  "starterCode": "function solve(input) {\n  const { matrix, target } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "matrix": [
+          [1, 3, 5, 7],
+          [10, 11, 16, 20],
+          [23, 30, 34, 60]
+        ],
+        "target": 3
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "matrix": [
+          [1, 3, 5, 7],
+          [10, 11, 16, 20],
+          [23, 30, 34, 60]
+        ],
+        "target": 13
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "matrix": [[1]],
+        "target": 1
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "matrix": [[1]],
+        "target": 2
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "matrix": [[1, 3]],
+        "target": 3
+      },
+      "expected": true
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Treat the m x n matrix as a single 1D sorted array of length m * n."
+    },
+    {
+      "level": 2,
+      "content": "Map 1D index mid to 2D coordinates: row = Math.floor(mid / n), col = mid % n."
+    },
+    {
+      "level": 3,
+      "content": "Binary search over 0 to (m * n - 1)."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { matrix, target } = input;\n  if (!matrix || matrix.length === 0) return false;\n  const m = matrix.length, n = matrix[0].length;\n  let low = 0, high = m * n - 1;\n  while (low <= high) {\n    const mid = Math.floor((low + high) / 2);\n    const val = matrix[Math.floor(mid / n)][mid % n];\n    if (val === target) return true;\n    if (val < target) low = mid + 1;\n    else high = mid - 1;\n  }\n  return false;\n}",
+    "explanation": "Virtual 1D array binary search indexed with row = mid / n, col = mid % n.\nTime Complexity: O(log(m * n))\nSpace Complexity: O(1)"
+  }
+}

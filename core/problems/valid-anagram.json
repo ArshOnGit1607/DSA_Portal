@@ -1,0 +1,63 @@
+{
+  "id": "valid-anagram",
+  "title": "Valid Anagram",
+  "topic": "Strings",
+  "difficulty": "Easy",
+  "description": "Given two strings `s` and `t`, return `true` if `t` is an anagram of `s`, and `false` otherwise. An anagram is a word or phrase formed by rearranging the letters of a different word or phrase.",
+  "starterCode": "function solve(input) {\n  const { s, t } = input;\n  // Your solution here\n  return false;\n}",
+  "testCases": [
+    {
+      "input": {
+        "s": "anagram",
+        "t": "nagaram"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "s": "rat",
+        "t": "car"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "s": "a",
+        "t": "a"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "s": "ab",
+        "t": "a"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "s": "listen",
+        "t": "silent"
+      },
+      "expected": true
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "If the lengths of s and t differ, they cannot be anagrams."
+    },
+    {
+      "level": 2,
+      "content": "Count the frequency of each character in s and decrement for characters in t."
+    },
+    {
+      "level": 3,
+      "content": "Use an array of size 26 or a Map to track character counts."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { s, t } = input;\n  if (s.length !== t.length) return false;\n  const counts = {};\n  for (const c of s) counts[c] = (counts[c] || 0) + 1;\n  for (const c of t) {\n    if (!counts[c]) return false;\n    counts[c]--;\n  }\n  return true;\n}",
+    "explanation": "Frequency count using a hash map. Length mismatch early exit.\nTime Complexity: O(n)\nSpace Complexity: O(1) (at most 26 lowercase English letters)"
+  }
+}

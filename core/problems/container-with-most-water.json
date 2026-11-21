@@ -1,0 +1,58 @@
+{
+  "id": "container-with-most-water",
+  "title": "Container With Most Water",
+  "topic": "Arrays",
+  "difficulty": "Medium",
+  "description": "You are given an integer array `height` of length `n`. There are `n` vertical lines drawn such that the two endpoints of the `i-th` line are `(i, 0)` and `(i, height[i])`. Find two lines that together with the x-axis form a container, such that the container contains the most water. Return the maximum amount of water a container can store.",
+  "starterCode": "function solve(input) {\n  const { height } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "height": [1, 8, 6, 2, 5, 4, 8, 3, 7]
+      },
+      "expected": 49
+    },
+    {
+      "input": {
+        "height": [1, 1]
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "height": [4, 3, 2, 1, 4]
+      },
+      "expected": 16
+    },
+    {
+      "input": {
+        "height": [1, 2, 1]
+      },
+      "expected": 2
+    },
+    {
+      "input": {
+        "height": [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+      },
+      "expected": 25
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Start with the widest container using two pointers at the ends."
+    },
+    {
+      "level": 2,
+      "content": "The area is limited by the shorter line: min(height[left], height[right]) * (right - left)."
+    },
+    {
+      "level": 3,
+      "content": "Always move the pointer pointing to the shorter vertical line inward."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { height } = input;\n  let left = 0, right = height.length - 1;\n  let maxArea = 0;\n  while (left < right) {\n    const w = right - left;\n    const h = Math.min(height[left], height[right]);\n    maxArea = Math.max(maxArea, w * h);\n    if (height[left] < height[right]) left++;\n    else right--;\n  }\n  return maxArea;\n}",
+    "explanation": "Two pointers starting from both extremities. Move the pointer with the smaller height inward since moving the taller one cannot increase the area.\nTime Complexity: O(n)\nSpace Complexity: O(1)"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "id": "string-to-integer-atoi",
+  "title": "String to Integer (atoi)",
+  "topic": "Strings",
+  "difficulty": "Medium",
+  "description": "Implement the `myAtoi(string s)` function, which converts a string to a 32-bit signed integer. Whitespace is ignored, optional sign is parsed, digits are converted, and result is clamped to [-2^31, 2^31 - 1].",
+  "starterCode": "function solve(input) {\n  const { s } = input;\n  // Your solution here\n  return 0;\n}",
+  "testCases": [
+    {
+      "input": {
+        "s": "42"
+      },
+      "expected": 42
+    },
+    {
+      "input": {
+        "s": "   -42"
+      },
+      "expected": -42
+    },
+    {
+      "input": {
+        "s": "4193 with words"
+      },
+      "expected": 4193
+    },
+    {
+      "input": {
+        "s": "-91283472332"
+      },
+      "expected": -2147483648
+    },
+    {
+      "input": {
+        "s": "+1"
+      },
+      "expected": 1
+    }
+  ],
+  "hints": [
+    {
+      "level": 1,
+      "content": "Trim leading whitespace first."
+    },
+    {
+      "level": 2,
+      "content": "Check for \"+\" or \"-\" to determine sign."
+    },
+    {
+      "level": 3,
+      "content": "Accumulate numeric digits until non-digit is hit, then clamp to 32-bit integer limits."
+    }
+  ],
+  "solution": {
+    "code": "function solve(input) {\n  const { s } = input;\n  let i = 0, sign = 1, res = 0;\n  const str = s.trim();\n  if (!str) return 0;\n  if (str[0] === \"-\") { sign = -1; i++; }\n  else if (str[0] === \"+\") { i++; }\n  while (i < str.length && str[i] >= \"0\" && str[i] <= \"9\") {\n    res = res * 10 + (str.charCodeAt(i) - 48);\n    i++;\n  }\n  res *= sign;\n  const INT_MAX = 2147483647, INT_MIN = -2147483648;\n  if (res > INT_MAX) return INT_MAX;\n  if (res < INT_MIN) return INT_MIN;\n  return res;\n}",
+    "explanation": "Sequential parsing: trim whitespace, read optional sign, consume digits, and clamp to 32-bit bounds.\nTime Complexity: O(n)\nSpace Complexity: O(1)"
+  }
+}
